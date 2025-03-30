@@ -20,12 +20,12 @@ function TransmissionLine()
     tl = render!(tl, p, GDSMeta(0))
     
 end
-    
+
 function single_transmon(;
     w_shield=2μm,
     claw_gap=6μm,
-    w_claw=34μm,
-    l_claw=121μm,
+    w_claw=32μm,
+    l_claw=160μm,
     cap_width=24μm,
     cap_length=620μm,
     cap_gap=30μm,
@@ -33,8 +33,7 @@ function single_transmon(;
     n_meander_turns=5,
     hanger_length=500μm,
     bend_radius=50μm,
-    save_gds::Bool=true,
-    mesh_order=2
+    save_gds::Bool=true
 )
     #### Reset name counter for consistency within a Julia session
     reset_uniquename!()
@@ -91,17 +90,6 @@ function single_transmon(;
     straight!(p_readout, readout_length / 2, PATH_STYLE)
     straight!(p_readout, readout_length / 2, PATH_STYLE)
 
-    # Readout lumped ports - squares on CPW trace, one at each end
-    csport = CoordinateSystem(uniquename("port"), nm)
-    render!(
-        csport,
-        only_simulated(centered(Rectangle(cpw_width, cpw_width))),
-        LayerVocabulary.PORT
-    )
-    # Attach with port center `cpw_width` from the end (instead of `cpw_width/2`) to avoid corner effects
-    attach!(p_readout, sref(csport), cpw_width, i=1) # @ start
-    attach!(p_readout, sref(csport), readout_length / 2 - cpw_width, i=2) # @ end
-
     #### Build schematic graph
     g = SchematicGraph("single-transmon")
     qubit_node = add_node!(g, qubit)
@@ -121,17 +109,12 @@ function single_transmon(;
 
     #### Prepare solid model
     # Specify the extent of the simulation domain.
-    substrate_x = 4mm
-    substrate_y = 3.7mm
+    substrate_x = 5mm
+    substrate_y = 5mm
 
     center_xyz = DeviceLayout.center(floorplan)
     chip = centered(Rectangle(substrate_x, substrate_y), on_pt=center_xyz)
-    sim_area = centered(Rectangle(substrate_x, substrate_y), on_pt=center_xyz)
-
-    # Define bounds for bounding simulation box
-    render!(floorplan.coordinate_system, sim_area, LayerVocabulary.SIMULATED_AREA)
-    # postrendering operations in solidmodel target define metal = (WRITEABLE_AREA - METAL_NEGATIVE) + METAL_POSITIVE
-    render!(floorplan.coordinate_system, sim_area, LayerVocabulary.WRITEABLE_AREA)
+    
     # Define rectangle that gets extruded to generate substrate volume
     render!(floorplan.coordinate_system, chip, LayerVocabulary.CHIP_AREA)
 
