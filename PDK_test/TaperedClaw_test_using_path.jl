@@ -30,8 +30,6 @@ main_sty isa Paths.CPW || error("Last path style should be CPW for a CPW tap")
 main_trace = Paths.trace(main_sty, pathlength(p[end]))
 main_gap = Paths.gap(main_sty, pathlength(p[end]))
 location = 1
-#norender = Paths.SimpleNoRender(main_trace + main_gap, virtual=true)
-#straight!(p, Paths.extent(sty), norender)
 
 tap1 = Path(
     p1(p) + main_trace / 2 * Point(cos(α1(p)), sin(α1(p)))
@@ -74,7 +72,24 @@ turn!(tap2, α_claw, r_taper, taper_style) #2 * (w_claw + r_claw + main_trace / 
 straight!(tap2, taper_length)
 terminate!(tap2; gap=taper_gap)
 
-#terminate!(tap; gap=mr.tap_cap_termination_gap)
+# now, fill in the center!
+pt0 = p1(p)
+narc = 197
+h = 0μm
+
+seg = segment(tap1[2])
+pts = map(seg, range(pathlength(seg), stop=zero(h), length=narc))
+push!(pts, Paths.p1(segment(tap1[3])))
+seg = segment(tap1[4])
+pts2 = map(seg, range(pathlength(seg), stop=zero(h), length=narc))
+append!(pts, pts2)
+
+h != zero(h) && push!(pts, Paths.p0(p))
+poly = Polygon(pts) + Point(zero(h), h) # + Point(0.0, (r-h)/2)
+cc = Cell("claw", nm)
+render!(cc, poly, METAL_POSITIVE)
+
+attach!(p, CellReference(cc, Point(0μm, 0μm)), (40μm):(40μm):((pathlength(p[end]))-40μm))
 g = SchematicGraph("tap_test")
 p_node = add_node!(g, p)
 tap1_node = add_node!(g, tap1)

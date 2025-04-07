@@ -9,10 +9,30 @@ using .ExamplePDK.Transmons, .ExamplePDK.ReadoutResonators, .ExamplePDK.ChipTemp
 import .ExamplePDK.SimpleJunctions: ExampleSimpleJunction
 import DeviceLayout: uconvert
 using PRIMA
-include("tapered_claw_test_using_geometry.jl")
+include("tapered_claw_test_using_combination.jl")
 
-function assemble_schematic_graph(g)
+function assemble_schematic_graph()
+    g = SchematicGraph("simplechip")
+    # Feedline
+    g, p_feedline_node = TransmissionLine(g)
+    ## Resonator
+    rres = ExampleClawedMeanderReadout(
+        total_length=4650μm,
+        coupling_length=100μm,
+        coupling_gap=200μm,
+        bend_radius=50μm,
+        n_meander_turns=5,
+        total_height=1600μm, # from top hook to bottom hook
+        hanger_length=500μm
+    )
+    #rres_node1 = add_node!(g, rres)
+    rres_node2 = add_node!(g, rres)
+    #rres_node3 = add_node!(g, rres)
 
+    #attach!(g, p_feedline_node, rres_node1 => :feedline, 0.7mm, i=4, location=1)
+    attach!(g, p_feedline_node, rres_node2 => :feedline, 1.35mm, i=4, location=-1)
+    #attach!(g, p_feedline_node, rres_node3 => :feedline, 2mm, i=4, location=1)
+    return g
 end
 
 function TransmissionLine(g)
@@ -24,17 +44,7 @@ function TransmissionLine(g)
     return g, p_feedline_node
 end
 
-g = SchematicGraph("simplechip")
-# Feedline
-g, p_feedline_node = TransmissionLine(g)
-## Resonator
-rres = TaperedClawedMeanderReadout()
-rres_node1 = add_node!(g, rres)
-rres_node2 = add_node!(g, rres)
-rres_node3 = add_node!(g, rres)
-attach!(g, p_feedline_node, rres_node2 => :feedline, 1.35mm, i=4, location=-1)
-attach!(g, p_feedline_node, rres_node1 => :feedline, 0.7mm, i=4, location=1)
-attach!(g, p_feedline_node, rres_node3 => :feedline, 2mm, i=4, location=1)
+g = assemble_schematic_graph()
 
 @time "Floorplanning" floorplan = plan(g)
 # Chip

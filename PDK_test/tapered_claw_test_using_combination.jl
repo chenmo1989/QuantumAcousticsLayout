@@ -112,11 +112,11 @@ function SchematicDrivenLayout._geometry!(
 
     ## temporary, params for the taper
     taper_trace = 1μm
-    taper_gap = 0.5μm
+    taper_gap = 0μm
     taper_length = 5μm
     r_taper = 10μm
 
-    gap_claw = 1μm
+    margin_claw = 10μm
 
     #w_claw = 100μm # width
     r_claw = 20μm # radius
@@ -134,38 +134,54 @@ function SchematicDrivenLayout._geometry!(
     arm_trace = style.trace
     pt0 = p1(pres.nodes[end].seg)
 
-    claw_hole1 = Rectangle(arm_trace, claw_gap) + pt0 + Point(-arm_trace / 2, -claw_gap)
-    claw_hole2 =
-        Rectangle(w_grasp + 2 * w_shield + 4 * claw_gap + 2 * w_claw, w_claw + 2 * claw_gap)
-    claw_hole2 = flushtop(claw_hole2, claw_hole1, centered=true)
-
-    claw_hole3 = Rectangle(w_claw + 2 * claw_gap, w_shield + l_claw + claw_gap)
-    claw_hole3 = flushleft(below(claw_hole3, claw_hole2), claw_hole2)
-
-    claw_hole4 = flushright(claw_hole3, claw_hole2)
-
-    claw1 = Rectangle(arm_trace, claw_gap)
-    claw1 = flushtop(claw1, claw_hole1, centered=true)
-
-    claw2 = Rectangle(w_grasp + 2 * w_shield + 2 * claw_gap + 2 * w_claw, w_claw)
-    claw2 = below(claw2, claw1, centered=true)
-
-    claw3 = Rectangle(w_claw, claw_gap + w_shield + l_claw)
-    claw3 = flushleft(below(claw3, claw2), claw2)
-
-    claw4 = flushright(claw3, claw2)
-
-    claw = difference2d(
-        [claw_hole1, claw_hole2, claw_hole3, claw_hole4],
-        [claw1, claw2, claw3, claw4]
+    tap1 = Path(
+        p1(pres) + main_trace / 2 * Point(cos(α1(pres)), sin(α1(pres)))
+        -
+        sign(location) * main_trace / 2 * Point(-sin(α1(pres)), cos(α1(pres))), # shift sideways by main_trace/2, so tap1 starts from the gap of the main trace
+        α0=α1(pres) - sign(location) * 90°,
+        metadata=pres.metadata,
+        name=uniquename("tap")
     )
 
-    tapered_claw1_1 = Rectangle(main_trace + main_gap * 2 + taper_trace + taper_gap, main_gap * 2 + w_claw) + pt0 - Point((main_trace + main_gap * 2 + taper_trace + taper_gap) / 2, main_gap * 2 + w_claw)
-    poly = _half_pie(r_claw, α_claw) - pt0
-    place!(cs, rotate(poly, π), METAL_POSITIVE)
+    tap2 = Path(
+        p1(pres) + main_trace / 2 * Point(cos(α1(pres)), sin(α1(pres)))
+        +
+        sign(location) * main_trace / 2 * Point(-sin(α1(pres)), cos(α1(pres))), # shift sideways by main_trace/2, so tap1 starts from the gap of the main trace
+        α0=α1(pres) + sign(location) * 90°,
+        metadata=pres.metadata,
+        name=uniquename("tap")
+    )
+
+    # terminate the main path
+    norender = Paths.SimpleNoRender(main_trace, virtual=true)
+    straight!(pres, main_trace, norender)
+    straight!(pres, 0μm, Paths.CPW(main_trace, 0μm))
+    terminate!(pres; gap=main_gap)
+
+    # tap1
+    straight!(tap1, taper_trace / 2 + taper_gap, Paths.Trace(main_trace))
+    turn!(tap1, 90° + α_claw, r_claw)
+    l_taper = (r_claw * cos(α_claw) + main_trace / 2 - r_taper * (1 - cos(α_claw))) / sin(α_claw)
+    straight!(tap1, l_taper, Paths.Taper())
+    turn!(tap1, -α_claw, r_taper, taper_style) #2 * (w_claw + r_claw + main_trace / 2 - gap_claw / 2), Paths.Taper())
+    straight!(tap1, taper_length)
+    terminate!(tap1; gap=taper_gap)
+
+    # tap2
+    straight!(tap2, taper_trace / 2 + taper_gap, Paths.CPW(main_trace, 0μm))
+    turn!(tap2, -90° - α_claw, r_claw)
+    straight!(tap2, l_taper, Paths.Taper())
+    turn!(tap2, α_claw, r_taper, taper_style) #2 * (w_claw + r_claw + main_trace / 2 - gap_claw / 2), Paths.Taper())
+    straight!(tap2, taper_length)
+    terminate!(tap2; gap=taper_gap)
+
+    #poly = _half_pie(r_claw, α_claw) - pt0
+    l_r1 = main_trace / 2 + main_gap * 2 + r_claw * (1 + sin(α_claw)) + l_taper * cos(α_claw) + r_taper * sin(α_claw) + taper_length
+    r1 = centered(Rectangle(main_trace + main_gap * 4 + r_claw * 2 + margin_claw * 2, l_r1), on_pt=pt0)
+    place!(cs, Rounded(r1, 2μm) - Point(0μm, l_r1 / 2 - main_gap), METAL_POSITIVE)
     #tapered_claw1_2 = SimpleShapes.radial_cut(r_claw, 60°, 0μm)
     #tapered_claw = tapered_claw1_2 + pt0
-    render!.(cs, [pres, claw], METAL_NEGATIVE)
+    render!.(cs, [pres, tap1, tap2], METAL_NEGATIVE)
     #render!(cs, tapered_claw, METAL_POSITIVE)
 
     return cs
@@ -195,6 +211,19 @@ SchematicDrivenLayout.matching_hooks(
     ::TaperedClawedMeanderReadout,
     ::ExampleRectangleTransmon
 ) = (:qubit, :readout)
+
+function _generate_polygon(tap, h=0μm; narc::Int=197)
+    seg = segment(tap[2])
+    pts = map(seg, range(pathlength(seg), stop=zero(h), length=narc))
+    push!(pts, Paths.p1(segment(tap[3])))
+    seg = segment(tap[4])
+    pts2 = map(seg, range(pathlength(seg), stop=zero(h), length=narc))
+    append!(pts, pts2)
+
+    #    h != zero(h) && push!(pts, Paths.p0(p))
+    poly = Polygon(pts) + Point(zero(h), h) # + Point(0.0, (r-h)/2)
+    return poly
+end
 
 function _half_pie(r, α; h=0μm, narc::Int=197)
     p = Path(Point(h * tan(α / 2), -h), α0=α - π / 2)
