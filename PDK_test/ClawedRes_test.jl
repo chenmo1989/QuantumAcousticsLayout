@@ -9,17 +9,17 @@ using .ExamplePDK.Transmons, .ExamplePDK.ReadoutResonators, .ExamplePDK.ChipTemp
 import .ExamplePDK.SimpleJunctions: ExampleSimpleJunction
 import DeviceLayout: uconvert
 using PRIMA
-include("tapered_claw_test_using_combination.jl")
+include("tapered_claw_test_using_path.jl")
 
 function assemble_schematic_graph()
     g = SchematicGraph("simplechip")
     # Feedline
     g, p_feedline_node = TransmissionLine(g)
     ## Resonator
-    rres = ExampleClawedMeanderReadout(
-        total_length=4650μm,
-        coupling_length=100μm,
-        coupling_gap=200μm,
+    rres = TaperedClawedMeanderReadout(
+        total_length=4500μm,
+        coupling_length=150μm,
+        coupling_gap=5μm,
         bend_radius=50μm,
         n_meander_turns=5,
         total_height=1600μm, # from top hook to bottom hook

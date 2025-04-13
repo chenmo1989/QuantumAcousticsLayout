@@ -87,7 +87,7 @@ append!(pts, pts2)
 h != zero(h) && push!(pts, Paths.p0(p))
 poly = Polygon(pts) + Point(zero(h), h) # + Point(0.0, (r-h)/2)
 cc = Cell("claw", nm)
-render!(cc, poly, METAL_POSITIVE)
+render!(cc, poly)
 
 attach!(p, CellReference(cc, Point(0μm, 0μm)), (40μm):(40μm):((pathlength(p[end]))-40μm))
 g = SchematicGraph("tap_test")
