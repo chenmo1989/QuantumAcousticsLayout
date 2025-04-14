@@ -23,7 +23,9 @@ function assemble_schematic_graph()
         bend_radius=50μm,
         n_meander_turns=5,
         total_height=1600μm, # from top hook to bottom hook
-        hanger_length=500μm
+        hanger_length=500μm,
+        gap_claw=0.8μm,
+        α_claw=20°
     )
     #rres_node1 = add_node!(g, rres)
     rres_node2 = add_node!(g, rres)
