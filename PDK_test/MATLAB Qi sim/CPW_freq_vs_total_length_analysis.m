@@ -5,6 +5,7 @@
 clear
 clc
 
+%% Regular Claw Resonators
 total_length = [5800, 5700, 5500, 5100, 4500];
 freq = [4.6081, 4.6824, 4.8351, 5.1709, 5.7737];
 
@@ -12,24 +13,24 @@ freq = [4.6081, 4.6824, 4.8351, 5.1709, 5.7737];
 degree = 1;
 
 % Fit polynomial
-p = polyfit(total_length, freq, degree);
+p2 = polyfit(total_length, freq, degree);
 
 % Evaluate polynomial over a finer grid for smooth plotting
 x_fit = linspace(min(total_length), max(total_length), 100);
-y_fit = polyval(p, x_fit);
+y_fit = polyval(p2, x_fit);
 
 % Create figure
 figure('Color', 'w');  % white background
 
 % Plot original data
 scatter(total_length, freq, 80, 'filled', 'MarkerFaceColor', '#0072BD', ...
-        'DisplayName', 'COMSOL simulation');
+        'DisplayName', 'COMSOL sim (regular claw)');
 
 hold on;
 
 % Plot fitted curve
 plot(x_fit, y_fit, 'LineWidth', 2.5, 'Color', '#D95319', ...
-     'DisplayName', sprintf('Polynomial Fit (deg %d)', degree));
+     'DisplayName', 'Linear Fit (regular claw)');
 
 % Improve axes appearance
 grid on;
@@ -45,3 +46,26 @@ legend('Location', 'northeast', 'FontSize', 11);
 
 % Optional: tight margins
 axis tight;
+
+
+
+
+% if I want to find the total_length for certain target frequency ft
+% roots(p - [0, ft])
+
+
+%% Tapered Claw Resonators
+hold on
+
+% Fit polynomial
+p = polyfit([5500, 5100, 4600], [5.2663, 5.6661, 6.2647], degree);
+
+% Evaluate polynomial over a finer grid for smooth plotting
+y_fit2 = polyval(p, x_fit);
+
+scatter([5500, 5100, 4600], [5.2663, 5.6661, 6.2647], 80, 'filled', ...
+        'DisplayName', 'COMSOL sim (tapered claw)');
+
+% Plot fitted curve
+plot(x_fit, y_fit2, 'LineWidth', 2.5, ...
+     'DisplayName', 'Linear Fit (tapered claw)');
