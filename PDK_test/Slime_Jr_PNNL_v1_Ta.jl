@@ -96,12 +96,12 @@ function assemble_schematic_graph()
     rres_node5 = add_node!(g, rres5)
     rres_node6 = add_node!(g, rres6)
 
-    attach!(g, p_feedline_node, rres_node1 => :feedline, 1mm, i=4, location=-1)
-    attach!(g, p_feedline_node, rres_node2 => :feedline, 1.5mm, i=4, location=1)
-    attach!(g, p_feedline_node, rres_node3 => :feedline, 2mm, i=4, location=1)
-    attach!(g, p_feedline_node, rres_node4 => :feedline, 2.5mm, i=4, location=-1)
-    attach!(g, p_feedline_node, rres_node5 => :feedline, 3mm, i=4, location=1)
-    attach!(g, p_feedline_node, rres_node6 => :feedline, 3.5mm, i=4, location=-1)
+    attach!(g, p_feedline_node, rres_node1 => :feedline, 1.25mm, i=4, location=-1)
+    attach!(g, p_feedline_node, rres_node2 => :feedline, 1.75mm, i=4, location=1)
+    attach!(g, p_feedline_node, rres_node3 => :feedline, 2.25mm, i=4, location=-1)
+    attach!(g, p_feedline_node, rres_node4 => :feedline, 2.75mm, i=4, location=1)
+    attach!(g, p_feedline_node, rres_node5 => :feedline, 3.25mm, i=4, location=-1)
+    attach!(g, p_feedline_node, rres_node6 => :feedline, 3.75mm, i=4, location=1)
 
     return g
 end
@@ -126,15 +126,39 @@ render!(floorplan.coordinate_system, chip, LayerVocabulary.CHIP_AREA)
 
 check!(floorplan)
 
-chip_unit = Cell("simplechip") # "chip_unit" = "pattern used for fabrication"
-@time "Rendering to polygons" render!(chip_unit, floorplan, ASSEMBLY_TARGET)
+unit_chip = Cell("unit_chip") # "unit_chip" = "pattern used for fabrication"
+@time "Rendering to polygons" render!(unit_chip, floorplan, ASSEMBLY_TARGET)
 #render!(g, identity, strict=:no, simulation=true)
+flatten!(unit_chip)
+
+# Assemble into a larger 2x2 sample
+full_chip = Cell("full_chip")
+push!(full_chip.refs, CellArray(unit_chip, Point(0μm, 0μm), dr=Point(0mm, -7mm), dc=Point(7mm, 0mm), nr=2, nc=2))
+flatten!(full_chip)
 
 # add chip markups
-chip_markings = Cell("chip_markup")
-PolyText.polytext!(chip_markings, "CQED Lab @ UW\nSlime Jr v1", DotMatrix(; pixelsize=15μm, rounding=6μm))
-push!(chip_unit.refs, CellReference(chip_markings, Point(-3mm, -2.8mm)))
+chip_markings = Cell(uniquename("chip_markup"))
+PolyText.polytext!(chip_markings, "CQED Lab @ UW\nSlime Jr v1\nTa/Nb S1", DotMatrix(; pixelsize=18μm, rounding=6μm))
+push!(full_chip.refs, CellReference(chip_markings, Point(-3mm, -2.5mm)))
 
-flatten!(chip_unit)
+chip_markings = Cell(uniquename("chip_markup"))
+PolyText.polytext!(chip_markings, "CQED Lab @ UW\nSlime Jr v1\nTa/Nb S2", DotMatrix(; pixelsize=18μm, rounding=6μm))
+push!(full_chip.refs, CellReference(chip_markings, Point(4mm, -2.5mm)))
 
-save(joinpath(@__DIR__, "Slime_Jr_PNNL_v1.gds"), chip_unit)
+chip_markings = Cell(uniquename("chip_markup"))
+PolyText.polytext!(chip_markings, "CQED Lab @ UW\nSlime Jr v1\nTa/Nb S3", DotMatrix(; pixelsize=18μm, rounding=6μm))
+push!(full_chip.refs, CellReference(chip_markings, Point(-3mm, -9.5mm)))
+
+chip_markings = Cell(uniquename("chip_markup"))
+PolyText.polytext!(chip_markings, "CQED Lab @ UW\nSlime Jr v1\nTa/Nb S4", DotMatrix(; pixelsize=18μm, rounding=6μm))
+push!(full_chip.refs, CellReference(chip_markings, Point(4mm, -9.5mm)))
+
+# add dicing cross
+dicing_marker = Cell(uniquename("dicing_marker"))
+render!(dicing_marker, centered(Rectangle(1mm, 0.1mm)))
+render!(dicing_marker, centered(Rectangle(0.1mm, 1mm)))
+push!(full_chip.refs, CellArray(dicing_marker, Point(-3.5mm, 3.5mm), dr=Point(0mm, -7mm), dc=Point(7mm, 0mm), nr=3, nc=3))
+
+flatten!(full_chip)
+
+save(joinpath(@__DIR__, "Slime_Jr_PNNL_v1_Ta.gds"), full_chip)
