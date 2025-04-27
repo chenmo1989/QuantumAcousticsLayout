@@ -27,7 +27,8 @@ function assemble_schematic_graph()
         total_height=1600μm, # from top hook to bottom hook
         hanger_length=400μm,
         gap_claw=0.8μm,
-        α_claw=20°
+        α_claw=20°,
+        taper_style=Paths.CPW(1.0μm, 0.8μm)
     )
 
     rres2 = TaperedClawedMeanderReadout(
@@ -39,7 +40,8 @@ function assemble_schematic_graph()
         total_height=1600μm, # from top hook to bottom hook
         hanger_length=400μm,
         gap_claw=0.8μm,
-        α_claw=20°
+        α_claw=20°,
+        taper_style=Paths.CPW(1.0μm, 0.8μm)
     )
 
     rres3 = TaperedClawedMeanderReadout(
@@ -51,7 +53,8 @@ function assemble_schematic_graph()
         total_height=1600μm, # from top hook to bottom hook
         hanger_length=400μm,
         gap_claw=0.8μm,
-        α_claw=20°
+        α_claw=20°,
+        taper_style=Paths.CPW(1.0μm, 0.8μm)
     )
     rres4 = TaperedClawedMeanderReadout(
         total_length=5875μm,
@@ -62,7 +65,8 @@ function assemble_schematic_graph()
         total_height=1600μm, # from top hook to bottom hook
         hanger_length=400μm,
         gap_claw=0.8μm,
-        α_claw=20°
+        α_claw=20°,
+        taper_style=Paths.CPW(1.0μm, 0.8μm)
     )
 
     rres5 = TaperedClawedMeanderReadout(
@@ -74,7 +78,8 @@ function assemble_schematic_graph()
         total_height=1600μm, # from top hook to bottom hook
         hanger_length=400μm,
         gap_claw=0.8μm,
-        α_claw=20°
+        α_claw=20°,
+        taper_style=Paths.CPW(1.0μm, 0.8μm)
     )
 
     rres6 = TaperedClawedMeanderReadout(
@@ -86,7 +91,8 @@ function assemble_schematic_graph()
         total_height=1600μm, # from top hook to bottom hook
         hanger_length=400μm,
         gap_claw=0.8μm,
-        α_claw=20°
+        α_claw=20°,
+        taper_style=Paths.CPW(1.0μm, 0.8μm)
     )
 
     rres_node1 = add_node!(g, rres1)
@@ -161,4 +167,4 @@ push!(full_chip.refs, CellArray(dicing_marker, Point(-3.5mm, 3.5mm), dr=Point(0m
 
 flatten!(full_chip)
 
-save(joinpath(@__DIR__, "Slime_Jr_PNNL_v1.gds"), full_chip)
+save(joinpath(@__DIR__, "Slime_Jr_PNNL_v2_TiN.gds"), full_chip)
