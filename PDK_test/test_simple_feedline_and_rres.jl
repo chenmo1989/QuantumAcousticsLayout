@@ -12,13 +12,13 @@ import DeviceLayout: uconvert
 using PRIMA
 
 function TransmissionLine()
-    p = Path(Point(-2000μm, 0μm), α0 = 0)
+    p = Path(Point(-2000μm, 0μm), α0=0)
     sty = launch!(p)
     straight!(p, 4000μm, sty)
     launch!(p)
     tl = Cell(uniquename("transmissionline"), nm)
     tl = render!(tl, p, GDSMeta(0))
-    
+
 end
 
 function single_transmon(;
@@ -114,7 +114,7 @@ function single_transmon(;
 
     center_xyz = DeviceLayout.center(floorplan)
     chip = centered(Rectangle(substrate_x, substrate_y), on_pt=center_xyz)
-    
+
     # Define rectangle that gets extruded to generate substrate volume
     render!(floorplan.coordinate_system, chip, LayerVocabulary.CHIP_AREA)
 
@@ -136,7 +136,7 @@ function main()
     c = single_transmon()
     #tl = TransmissionLine()
     #return save("test.gds", tl);
-    
+
 end
 
 main() # execute main() at end of script.
