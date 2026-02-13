@@ -8,6 +8,7 @@ using CQEDPDK
 import CQEDPDK.LAYER_RECORD
 using CQEDPDK.ChipTemplates_CQED
 
+## Define constants
 # define layers
 MECHANICS_LAYER = 3
 HF_HOLES_LAYER = 3
@@ -26,23 +27,31 @@ deadzone_height = 0.15mm
 die_height = 2mm
 die_width = 2mm
 
-# define baseline dimensions for mechanics
-ca = 534nm
-ct = 123nm
-ch = 422nm
+etch_bias_LL = 450nm
 
-cpw_width = 10μm
-cpw_gap = 6μm
-PATH_STYLE = Paths.SimpleCPW(cpw_width, cpw_gap)
+cpw_style = Paths.SimpleCPW(10µm + 2 * etch_bias_LL, 6μm - 2 * etch_bias_LL)
 
-function PhS_unitcell_asym(c, ca=534nm, ctx=ct, cty=ct, chx=ch, chy=ch)
-    #r0 = Rectangle(Point(-ca/2, -ca/2), Point(ca/2, ca/2))
-    r1 = Rectangle(Point(-ctx / 2, -chy / 2), Point(ctx / 2, chy / 2))
-    r2 = Rectangle(Point(-chx / 2, -cty / 2), Point(chx / 2, cty / 2))
+launch_param = Dict(
+    :extround => 0.0μm,
+    :trace0 => 200.0μm,
+    :trace1 => 10.0μm + etch_bias_LL * 2,
+    :gap0 => 130.0μm,
+    :gap1 => 6.0μm - etch_bias_LL * 2,
+    :flatlen => 200.0μm,
+    :taperlen => 150.0μm,
+)
 
-    u = Polygons.union2d(r2, r1)
-    render!(c, u, GDSMeta(MECHANICS_LAYER))
-end
+w_shield = 2μm
+w_claw = 35μm
+l_claw = 160μm
+claw_gap = 6μm
+w_grasp = 84μm
+arm_trace = 10μm
+cap_width = 24μm
+cap_length = 410μm
+cap_gap = 30μm
+junction_gap = 20.0μm
+island_rounding = 0μm
 
 function add_global_marker!(dev)
     # Elionix recognizable global markers
@@ -97,50 +106,53 @@ function add_dicing_cross(dev)
     push!(dev.refs, CellArray(dicing_marker, Point(1.5mm, -1.5mm), dr=Point(0mm, -3mm), dc=Point(3mm, 0mm), nr=1, nc=1))
 end
 
-function build_transmission_line()
+function build_transmission_line(; cpw_style=cpw_style)
     (ptL, αL) = ChipTemplates_CQED.launcher_site(16)
     (ptR, αR) = ChipTemplates_CQED.launcher_site(5)
 
-    readout_length = hypot(ptR.x - ptL.x, ptR.y - ptL.y) - 650μm * 2 # length of launcher is 650μm
+    readout_length = hypot(ptR.x - ptL.x, ptR.y - ptL.y) - (launch_param[:gap0] + launch_param[:flatlen] + launch_param[:taperlen]) * 2 # length of launcher is 650μm
 
     TL_path = Path(
-        ptL + Point(150.0μm, 0.0μm), # 150μm is the "gap" behind the bonding pad
+        ptL + Point(launch_param[:gap0], 0.0μm), # 150μm is the "gap" behind the bonding pad
         α0=αL,
         name="p_ro",
         metadata=LAYER_RECORD.metal_negative
     )
-    sty = launch!(TL_path; extround=50.0μm, trace0=300.0μm,
-        trace1=10.0μm, gap0=150.0μm, gap1=6.0μm, flatlen=250.0μm,
-        taperlen=250.0μm)
-    straight!(TL_path, readout_length / 2, PATH_STYLE)
-    straight!(TL_path, readout_length / 2, PATH_STYLE)
-    launch!(TL_path)
+    launch!(TL_path; launch_param...)
+    straight!(TL_path, readout_length / 2, cpw_style)
+    straight!(TL_path, readout_length / 2, cpw_style)
+    launch!(TL_path; launch_param...)
     return TL_path
 end
 
-function SimpleDolanJunction(; w_jj=0.3μm, h_jj=0.14μm, h_ground_island=20μm, h_excess=2μm, w_pad_bot=2μm, w_pad_top=2μm, L_taper=1μm, L_finger=1μm)
+function SimpleDolanJunction(; w_jj=0.3μm, h_jj=0.14μm, h_ground_island=20μm, h_excess=2μm, w_pad_bot=2μm, w_pad_top=2μm, L_taper=0.5μm, L_finger=1.36μm)
     jj = Cell(uniquename("jj"), nm)
     # simulation geometry
     jj_rect = centered(Rectangle(w_jj, h_jj))
     top_lead = Align.above(Rectangle(w_pad_top, (h_ground_island - h_jj) / 2 + h_excess), jj_rect; centered=true)
-    ### bottom lead
-    bottom_lead = Align.below(Polygon(
-            Point(-w_pad_bot / 2, -h_ground_island / 2 - h_excess),
-            Point(-w_pad_bot / 2, -h_jj / 2 - L_finger - L_taper),
-            Point(-w_jj / 2, -h_jj / 2 - L_finger),
-            Point(-w_jj / 2, -h_jj / 2),
-            Point(w_jj / 2, -h_jj / 2),
-            Point(w_jj / 2, -h_jj / 2 - L_finger),
-            Point(w_pad_bot / 2, -h_jj / 2 - L_finger - L_taper),
-            Point(w_pad_bot / 2, -h_ground_island / 2 - h_excess)
-        ), jj_rect; centered=true)
-    render!(jj, jj_rect, LAYER_RECORD.junction_pattern)
+    jj_finger = Align.below(Rectangle(w_jj, L_finger), jj_rect; centered=true)
+    # taper
+    jj_taper = Align.below(Polygon(
+            Point(-w_pad_bot / 2, -L_taper),
+            Point(-w_jj / 2, 0μm),
+            Point(w_jj / 2, 0μm),
+            Point(w_pad_bot / 2, -L_taper)
+        ), jj_finger; centered=true
+    )
+    # bottom lead
+    bottom_lead = Align.below(Rectangle(w_pad_bot, (h_ground_island - h_jj) / 2 + h_excess - L_taper - L_finger),
+        jj_taper; centered=true)
+
     render!(jj, top_lead, LAYER_RECORD.junction_pattern)
+    render!(jj, jj_finger, LAYER_RECORD.junction_pattern)
+    render!(jj, jj_taper, LAYER_RECORD.junction_pattern)
     render!(jj, bottom_lead, LAYER_RECORD.junction_pattern)
+    render!(jj, union2d(jj_rect, jj_finger), LAYER_RECORD.SE1_device)
+    render!(jj, jj_taper, LAYER_RECORD.SE1_device)
     return jj
 end
 
-function make_SQUID(; w_jj1=0.3μm, h_jj1=0.14μm, w_jj2=0.3μm, h_jj2=0.14μm, h_ground_island=20μm, h_excess=2μm, w_pad_bot=2μm, w_pad_top=2μm, L_taper=1μm, L_finger=1μm, w_squid=10μm)
+function make_SQUID(; w_jj1=0.1μm, h_jj1=0.14μm, w_jj2=0.12μm, h_jj2=0.14μm, h_ground_island=20μm, h_excess=2μm, w_pad_bot=2μm, w_pad_top=2μm, L_taper=0.5μm, L_finger=1.36μm, w_squid=10μm)
     asquid = Cell(uniquename("asymmetric squid"), nm)
     # simulation geometry
     jj1 = SimpleDolanJunction(; w_jj=w_jj1, h_jj=h_jj1, h_ground_island=h_ground_island, h_excess=h_excess, w_pad_bot=w_pad_bot, w_pad_top=w_pad_top, L_taper=L_taper, L_finger=L_finger)
@@ -152,25 +164,25 @@ function make_SQUID(; w_jj1=0.3μm, h_jj1=0.14μm, w_jj2=0.3μm, h_jj2=0.14μm, 
     return asquid
 end
 
-function claw_cpl(; w_shield=2μm, w_claw=32μm, l_claw=160μm, claw_gap=6μm, w_grasp=84μm, arm_trace=10μm)
+function claw_cpl(; w_shield=2μm, w_claw=35μm, l_claw=160μm, claw_gap=cpw_style.gap + 2 * etch_bias_LL, w_grasp=90μm, arm_trace=cpw_style.trace - 2 * etch_bias_LL)
     claw_cpl = Cell(uniquename("claw_cpl"), nm)
     claw_hole1 = centered(Rectangle(arm_trace, claw_gap))
     claw_hole2 =
-        Rectangle(w_grasp + 2 * w_shield + 4 * claw_gap + 2 * w_claw, w_claw + 2 * claw_gap)
+        Rectangle(w_grasp + 2 * w_shield + 4 * claw_gap + 2 * w_claw - 2 * etch_bias_LL, w_claw + 2 * claw_gap - 2 * etch_bias_LL)
     claw_hole2 = flushtop(claw_hole2, claw_hole1, centered=true)
 
-    claw_hole3 = Rectangle(w_claw + 2 * claw_gap, w_shield + l_claw + claw_gap)
+    claw_hole3 = Rectangle(w_claw + 2 * claw_gap - 2 * etch_bias_LL, w_shield + l_claw + claw_gap + etch_bias_LL)
     claw_hole3 = flushleft(below(claw_hole3, claw_hole2), claw_hole2)
 
     claw_hole4 = flushright(claw_hole3, claw_hole2)
 
-    claw1 = Rectangle(arm_trace, claw_gap)
+    claw1 = Rectangle(arm_trace + 2 * etch_bias_LL, claw_gap - 2 * etch_bias_LL)
     claw1 = flushtop(claw1, claw_hole1, centered=true)
 
-    claw2 = Rectangle(w_grasp + 2 * w_shield + 2 * claw_gap + 2 * w_claw, w_claw)
+    claw2 = Rectangle(w_grasp + 2 * w_shield + 2 * claw_gap + 2 * w_claw + 2 * etch_bias_LL, w_claw + 2 * etch_bias_LL)
     claw2 = below(claw2, claw1, centered=true)
 
-    claw3 = Rectangle(w_claw, claw_gap + w_shield + l_claw)
+    claw3 = Rectangle(w_claw + 2 * etch_bias_LL, claw_gap + w_shield + l_claw + etch_bias_LL)
     claw3 = flushleft(below(claw3, claw2), claw2)
 
     claw4 = flushright(claw3, claw2)
@@ -183,30 +195,36 @@ function claw_cpl(; w_shield=2μm, w_claw=32μm, l_claw=160μm, claw_gap=6μm, w
     return claw_cpl
 end
 
-function qubit_cap(; cap_width=24μm, cap_length=520μm, cap_gap=30μm, junction_gap=20.0μm, island_rounding=0μm)
+function qubit_cap_cross(; cap_width=30μm, cap_length=410μm, cap_gap=30μm, junction_gap=20.0μm, island_rounding=0μm)
     qubit_cap = Cell(uniquename("qubit_cap"), nm)
 
     # Capacitor metal
-    qubitIsland = Rectangle(Point(-cap_width / 2, cap_length + junction_gap / 2), Point(cap_width / 2, junction_gap / 2))
+    qubitIsland = union2d(
+        Rectangle(Point(-cap_width / 2 - etch_bias_LL, 0µm - etch_bias_LL), Point(cap_width / 2 + etch_bias_LL, cap_length + etch_bias_LL)) + Point(0µm, junction_gap / 2),
+        Rectangle(Point(-cap_length / 2 - etch_bias_LL, -cap_width / 2 - etch_bias_LL), Point(cap_length / 2 + etch_bias_LL, cap_width / 2 + etch_bias_LL)) + Point(0µm, junction_gap / 2 + cap_length / 2)
+    )
 
     # Capacitor ground
-    gapFill = Rectangle(Point(-cap_width / 2 - cap_gap, cap_length + junction_gap / 2 + cap_gap),
-        Point(cap_width / 2 + cap_gap, -junction_gap / 2))
+    gapFill = union2d(
+        Rectangle(Point(-cap_width / 2 - cap_gap + etch_bias_LL, cap_length + junction_gap / 2 + cap_gap - etch_bias_LL),
+            Point(cap_width / 2 + cap_gap - etch_bias_LL, -junction_gap / 2 + etch_bias_LL)),
+        Rectangle(Point(-cap_length / 2 - cap_gap + etch_bias_LL, -cap_width / 2 - cap_gap + etch_bias_LL), Point(cap_length / 2 + cap_gap - etch_bias_LL, cap_width / 2 + cap_gap - etch_bias_LL)) + Point(0µm, junction_gap / 2 + cap_length / 2)
+    )
 
     diff = Rounded(island_rounding)(difference2d(gapFill, qubitIsland))
 
     render!(qubit_cap, diff, LAYER_RECORD.metal_negative)
-    push!(qubit_cap.refs, CellReference(qubit_island, Point(0μm, 0μm)))
+    #push!(qubit_cap.refs, CellReference(qubit_island, Point(0μm, 0μm)))
 
     claw = claw_cpl()
-    push!(qubit_cap.refs, CellReference(claw, Point(0μm, cap_length + cap_gap + junction_gap / 2)))
+    push!(qubit_cap.refs, CellReference(claw, Point(0μm, cap_length + cap_gap + junction_gap / 2 - etch_bias_LL)))
 
     return qubit_cap
 end
 
 function make_qubit_cell(;)
     Qubit_cell = Cell(uniquename("Qubit_cell"), nm)
-    qubit_island = qubit_cap()
+    qubit_island = qubit_cap_cross()
     jj = make_SQUID()
 
     # the JJs/SQUID
@@ -216,9 +234,9 @@ function make_qubit_cell(;)
     return Qubit_cell
 end
 
-function create_resonator(style, p0; total_length=5000μm, coupling_length=200μm, coupling_gap=5μm, bend_radius=50μm, n_meander_turns=5, total_height=1350μm, hanger_length=500μm)
+function create_resonator(style, p0; total_length=4860μm, coupling_length=400μm, coupling_gap=5μm, bend_radius=50μm, n_meander_turns=5, total_height=1450μm, hanger_length=500μm, w_shield=2μm)
     path = Path(
-        p0 + Point(-coupling_length / 2, -coupling_gap - style.gap * 2 - style.trace),
+        p0 + Point(-coupling_length / 2, -coupling_gap - style.gap * 2 - style.trace - 2 * etch_bias_LL),
         α0=0°,
     )
 
@@ -270,10 +288,10 @@ function generate_Zline_instructions!(path, style, instructions)
             turn!(path, instruction[2], instruction[3], style)
         elseif instruction[1] == "endZ"
             straight!(path, 200μm, Paths.Taper())
-            straight!(path, 100μm, Paths.CPW(3.3μm, 2.0μm))
+            straight!(path, 100μm, Paths.CPW(3.3μm + 2 * etch_bias_LL, 2.0μm - 2 * etch_bias_LL))
             straight!(path, 50μm)
             flux_bias_cell = Cell(uniquename("flux_bias"), nm)
-            flux_bias!(flux_bias_cell, "r", 6.35μm, 2μm, 4.35μm, 3.3μm, 2μm) # flux_over, flux_under, flux_cut, z_trace, z_gap,
+            flux_bias!(flux_bias_cell, "r", 6.35μm, 2μm, 4.35μm, 3.3μm + 2 * etch_bias_LL, 2μm - 2 * etch_bias_LL) # flux_over, flux_under, flux_cut, z_trace, z_gap,
             flux_bias_cell_ref = CellReference(flux_bias_cell, Point(0μm, 0μm), rot=-pi / 2)
             attach!(path, flux_bias_cell_ref, 50μm, i=length(path))
         end
@@ -323,49 +341,105 @@ function flux_bias!(c::Cell{T}, dir, flux_over, flux_under, flux_cut, z_trace, z
     render!(c, result, LAYER_RECORD.metal_negative)
 end
 
-function generate_XYline_instructions!(path, hole_path, style, instructions)
+function generate_XYline_instructions!(path, style, instructions)
     # 'straight' instructions are parameterized by the length of straight cpw to
     #     append
     # 'turn' instructions are parameterized by the angle to turn and the radius of
     #     the turn
     for instruction in instructions
-        if instruction[1] == "straight1"
+        if instruction[1] == "straight"
             straight!(path, instruction[2], style)
-            straight!(hole_path, instruction[2], cpw_blank)
         elseif instruction[1] == "turn"
             turn!(path, instruction[2], instruction[3])
-            straight!(path, 200μm)
-            turn!(hole_path, instruction[2], instruction[3], cpw_blank)
-            straight!(hole_path, 200μm, cpw_blank)
-            #straight!(hole_path, instruction[3], cpw_blank)
-            #turn!(hole_path, instruction[2], 1nm, cpw_blank)
-            #straight!(hole_path, instruction[3], cpw_blank)
-        elseif instruction[1] == "straight2"
-            straight!(path, instruction[2])
-            straight!(hole_path, instruction[2], cpw_blank)
         elseif instruction[1] == "endXY"
-            straight!(path, 200μm, Paths.Taper())
-            straight!(path, 100μm, Paths.CPW(13μm, 1μm))
-            straight!(path, 2μm, Paths.Trace(15μm))
-            straight!(hole_path, 300μm, cpw_blank)
+            straight!(path, 100μm, Paths.Taper())
+            straight!(path, 100μm, Paths.CPW(2μm + 2 * etch_bias_LL, 1μm))
+            straight!(path, 2μm, Paths.Trace(4μm + 2 * etch_bias_LL))
         end
     end
 end
 
-function main()
-    w_shield = 2μm
-    w_claw = 32μm
-    l_claw = 160μm
-    claw_gap = 6μm
-    w_grasp = 84μm
-    arm_trace = 10μm
-    cap_width = 24μm
-    cap_length = 520μm
-    cap_gap = 30μm
-    junction_gap = 20.0μm
-    island_rounding = 0μm
+_is_termination(sty) = occursin("termination", lowercase(string(typeof(sty))))
 
-    cpw_style = Paths.SimpleCPW(10µm, 6μm)
+_seglen(seg) =
+    try
+        pathlength(seg)
+    catch
+        Paths.pathlength(seg)
+    end
+
+"""
+    center_trace_path(p; skip_terminations=true)
+
+Convert a CPW Path into a "center trace only" Path by replacing CPW-like styles with
+Trace/TaperTrace. Skips termination nodes (default).
+
+- SimpleCPW  -> Trace(constant trace width)
+- TaperCPW   -> TaperTrace(trace_at_start, trace_at_end) per segment
+- GeneralCPW/other with trace(sty, s) -> TaperTrace(trace(s=0), trace(s=Lseg))
+- Other styles -> left unchanged
+"""
+function center_trace_path(p::Paths.Path; skip_terminations=true, name=nothing, metadata=nothing)
+    out = Paths.Path(
+        p.p0;
+        α0=p.α0,
+        name=isnothing(name) ? "$(p.name)_trace" : name,
+        metadata=isnothing(metadata) ? p.metadata : metadata,
+    )
+
+    for node in p.nodes
+        sty = Paths.style(node)
+
+        if skip_terminations && _is_termination(sty)
+            continue
+        end
+
+        segs = Paths.segment(node)
+        seglist = (segs isa AbstractVector || segs isa Tuple) ? segs : (segs,)
+
+        for seg in seglist
+            Lseg = _seglen(seg)
+
+            newsty = sty
+
+            if sty isa Paths.SimpleCPW
+                newsty = Paths.Trace(Paths.trace(sty))
+
+            elseif sty isa Paths.TaperCPW
+                # Trace width varies along arclength; use start/end over this segment.
+                w0 = Paths.trace(sty, 0 * Lseg)
+                w1 = Paths.trace(sty, 1 * Lseg)   # some versions ignore t units; safer below
+                # safer: use arclength explicitly
+                w0 = Paths.trace(sty, zero(Lseg))
+                w1 = Paths.trace(sty, Lseg)
+                tsty = Paths.TaperTrace(w0, w1)
+                newsty = Paths._withlength!(tsty, Lseg)
+
+            else
+                # Generic: if trace(sty, s) exists, approximate by start/end widths
+                try
+                    w0 = Paths.trace(sty, zero(Lseg))
+                    w1 = Paths.trace(sty, Lseg)
+                    tsty = Paths.TaperTrace(w0, w1)
+                    newsty = Paths._withlength!(tsty, Lseg)
+                catch
+                    # fallback: if it has a constant trace(sty) method
+                    try
+                        newsty = Paths.Trace(Paths.trace(sty))
+                    catch
+                        newsty = sty
+                    end
+                end
+            end
+
+            push!(out.nodes, Paths.Node(seg, newsty))
+        end
+    end
+
+    return out
+end
+
+function main()
     # Chip
     device = Cell("device", nm)
 
@@ -375,32 +449,26 @@ function main()
         deadzone_width=deadzone_width,
         deadzone_height=deadzone_height
     )
-    TL_path = build_transmission_line()
-    #add_global_marker!(device)
-    #add_chip_triangle(device)
-    #add_local_marker(device)
-    #add_chip_signature(device)
-    #add_dicing_cross(device)
-    #add_mechanics_test_pattern(device)
-
-    render!(device, TL_path, LAYER_RECORD.metal_negative)
+    TL_path = build_transmission_line(cpw_style=cpw_style)
+    TL_path_trace = center_trace_path(TL_path)
 
     (ptL, αL) = ChipTemplates_CQED.launcher_site(16)
 
-    RO1_path = create_resonator(cpw_style, ptL + Point(1500µm, 0μm))
-    render!(device, RO1_path, LAYER_RECORD.metal_negative)
+    RO1_path = create_resonator(cpw_style, ptL + Point(1500μm, 0μm))
+    RO1_path_trace = center_trace_path(RO1_path)
 
     qubit = make_qubit_cell()
     p_end = Paths.p1(RO1_path)
+    p_end
     α_end = Paths.α1(RO1_path)               # replace with your actual endpoint function
-    push!(device.refs, CellReference(qubit, p_end - Point(0μm, junction_gap / 2 + cap_length + cap_gap + w_shield + w_claw + claw_gap * 2), rot=0))
+    push!(device.refs, CellReference(qubit, p_end - Point(0μm, junction_gap / 2 + cap_length + cap_gap + w_shield + w_claw + claw_gap * 2 - etch_bias_LL), rot=0))
 
     # Z line
     (ptZ1, αZ1) = ChipTemplates_CQED.launcher_site(11)
-    Z1_path = Path(ptZ1 + Point(0µm, 150µm), α0=αZ1)
-    launch!(Z1_path;)
+    Z1_path = Path(ptZ1 + Point(0µm, launch_param[:gap0]), α0=αZ1)
+    launch!(Z1_path; launch_param...)
     Z1_instructions = [
-        ["straight", 200μm - 59.519μm],
+        ["straight", 373.9μm - 52.519μm],
         ["turn", pi / 6, 500μm],
         ["straight", 282μm],
         ["turn", -pi / 6, 500μm],
@@ -408,7 +476,80 @@ function main()
         ["endZ"]
     ]
     generate_Zline_instructions!(Z1_path, cpw_style, Z1_instructions)
+    Z1_path_trace = center_trace_path(Z1_path)
+
+    # XY line
+    (ptXY1, αXY1) = ChipTemplates_CQED.launcher_site(14)
+    XY1_path = Path(ptXY1 + Point(launch_param[:gap0], 0µm), α0=αXY1)
+    launch!(XY1_path; launch_param...)
+    XY1_instructions = [
+        ["straight", (270 - 1.264)μm],
+        ["turn", pi / 4, 200μm],
+        ["straight", 200μm],
+        ["turn", -pi / 4, 200μm],
+        ["straight", 65μm],
+        ["endXY"]
+    ]
+    generate_XYline_instructions!(XY1_path, cpw_style, XY1_instructions)
+    XY1_path_trace = center_trace_path(XY1_path)
+
+    # XY line
+    (ptXY2, αXY2) = ChipTemplates_CQED.launcher_site(13)
+    XY2_path = Path(ptXY2 + Point(launch_param[:gap0], 0µm), α0=αXY2)
+    launch!(XY2_path; launch_param...)
+    XY2_instructions = [
+        ["straight", (210 - 7.13)μm],
+        ["turn", pi / 2.5, 100μm],
+        ["straight", 1100μm],
+        ["turn", -pi / 2.5, 100μm],
+        ["straight", 25μm],
+        ["endXY"]
+    ]
+    generate_XYline_instructions!(XY2_path, cpw_style, XY2_instructions)
+    XY2_path_trace = center_trace_path(XY2_path)
+
+    # XY line
+    (ptXY3, αXY3) = ChipTemplates_CQED.launcher_site(10)
+    XY3_path = Path(ptXY3 + Point(0µm, launch_param[:gap0]), α0=αXY3)
+    launch!(XY3_path; launch_param...)
+    XY3_instructions = [
+        ["straight", (210 - 7.13 + 1.955)μm],
+        ["turn", pi / 5, 100μm],
+        ["straight", 1390μm],
+        ["turn", pi * (0.5 - 1 / 5), 100μm],
+        ["straight", 145.978μm],
+        ["endXY"]
+    ]
+    generate_XYline_instructions!(XY3_path, cpw_style, XY3_instructions)
+    XY3_path_trace = center_trace_path(XY3_path)
+
+    # XY line
+    (ptXY4, αXY4) = ChipTemplates_CQED.launcher_site(9)
+    XY4_path = Path(ptXY4 + Point(0µm, launch_param[:gap0]), α0=αXY4)
+    launch!(XY4_path; launch_param...)
+    XY4_instructions = [
+        ["straight", (210 - 3.401)μm],
+        ["turn", pi / 3.5, 100μm],
+        ["straight", 2000μm],
+        ["turn", pi * (0.5 - 1 / 3.5), 100μm],
+        ["straight", 449.377μm],
+        ["endXY"]
+    ]
+    generate_XYline_instructions!(XY4_path, cpw_style, XY4_instructions)
+    XY4_path_trace = center_trace_path(XY4_path)
+
+
+    render!(device, TL_path, LAYER_RECORD.metal_negative)
+    render!(device, TL_path_trace, LAYER_RECORD.metal_positive)
+
+    render!(device, RO1_path, LAYER_RECORD.metal_negative)
     render!(device, Z1_path, LAYER_RECORD.metal_negative)
+    render!(device, XY1_path, LAYER_RECORD.metal_negative)
+    render!(device, XY2_path, LAYER_RECORD.metal_negative)
+    render!(device, XY3_path, LAYER_RECORD.metal_negative)
+
+    render!(device, XY4_path, LAYER_RECORD.metal_negative)
+
     save(joinpath(@__DIR__, "FUN17_CQED.gds"), device)
 end
 
