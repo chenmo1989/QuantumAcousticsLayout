@@ -75,7 +75,7 @@ function add_global_marker!(dev)
     return dev
 end
 
-function add_local_marker(die)
+function add_local_marker!(die)
     # add local markers
     # layer
     local_marker = Cell(uniquename("local_marker"))
@@ -84,15 +84,22 @@ function add_local_marker(die)
     push!(die.refs, CellArray(local_marker, Point(-0.2mm, 0.2mm), dr=Point(0mm, -0.4mm), dc=Point(0.4mm, 0mm), nr=2, nc=2))
 end
 
-function add_chip_signature(dev)
+function add_chip_signature!(dev)
     chip_signature = Cell(uniquename("chip_markup"))
     PolyText.polytext!(chip_signature, "ZEP cal SOI\nCQED Lab @ UW", DotMatrix(; pixelsize=25μm, rounding=6μm))
     push!(dev.refs, CellReference(chip_signature, Point(-4.5mm, -5.5mm)))
 end
 
+function add_design_name_LL!(dev, design_name)
+    annotation_cell = Cell(uniquename("text_WAS01"))
+    PolyText.polytext!(annotation_cell, design_name, DotMatrix(; pixelsize=8μm, rounding=1μm, meta = LAYER_RECORD.annotation))
+    push!(dev.refs, CellReference(annotation_cell, Point(-2.5mm, -2.5mm), rot=pi/2))
+    
+end
+
 function add_chip_triangle(dev)
     triangle = Cell(uniquename("triangle"))
-    render!(triangle, Polygon(Point(-525µm / 2, 0µm), Point(525µm / 2, 0µm), Point(0µm, 750µm)), LAYER_RECORD.marker)
+    render!(triangle, Polygon(Point(-525µm / 2, 0µm), Point(525µm / 2, 0µm), Point(0µm, 750µm)))
     push!(dev.refs, CellReference(triangle, Point(-4.5mm, -5mm)))
     return dev
 end
@@ -128,11 +135,20 @@ function build_transmission_line(; cpw_style=cpw_style)
     return TL_path
 end
 
-function SimpleDolanJunction(; w_jj=0.3μm, h_jj=0.14μm, h_ground_island=20μm, h_excess=2μm, w_pad_bot=2μm, w_pad_top=2μm, L_taper=0.5μm, L_finger=1.36μm)
+function SimpleDolanJunction(; w_jj=0.3μm, h_jj=0.14μm, h_ground_island=20μm, h_excess=1μm, w_pad_bot=2μm, w_pad_top=2μm, L_taper=0.5μm, L_finger=1.36μm, w_bot_lead_taper=2μm, w_bot_pad=10μm, h_bot_pad=6.55μm)
     jj = Cell(uniquename("jj"), nm)
     # simulation geometry
     jj_rect = centered(Rectangle(w_jj, h_jj))
-    top_lead = Align.above(Rectangle(w_pad_top, (h_ground_island - h_jj) / 2 + h_excess), jj_rect; centered=true)
+    top_lead = Align.above(Rectangle(w_pad_top, (h_ground_island - h_jj) / 2 - h_excess), jj_rect; centered=true)
+    top_lead_taper = Align.above(Polygon(
+            Point(-w_bot_lead_taper - w_pad_bot / 2, 0μm),
+            Point(-w_pad_bot / 2, -w_bot_lead_taper),
+            Point(w_pad_bot / 2, -w_bot_lead_taper),
+            Point(w_pad_bot / 2 + w_bot_lead_taper, 0μm)
+        ), top_lead; centered=true)
+    top_pad = Align.above(Rectangle(w_bot_pad, h_bot_pad),
+        top_lead_taper; centered=true)
+
     jj_finger = Align.below(Rectangle(w_jj, L_finger), jj_rect; centered=true)
     # taper
     jj_taper = Align.below(Polygon(
@@ -143,20 +159,44 @@ function SimpleDolanJunction(; w_jj=0.3μm, h_jj=0.14μm, h_ground_island=20μm,
         ), jj_finger; centered=true
     )
     # bottom lead
-    bottom_lead = Align.below(Rectangle(w_pad_bot, (h_ground_island - h_jj) / 2 + h_excess - L_taper - L_finger),
+    bottom_lead = Align.below(Rectangle(w_pad_bot, (h_ground_island - h_jj) / 2 - h_excess - L_taper - L_finger),
         jj_taper; centered=true)
+    bottom_lead_taper = Align.below(Polygon(
+            Point(-w_bot_lead_taper - w_pad_bot / 2, 0μm),
+            Point(-w_pad_bot / 2, w_bot_lead_taper),
+            Point(w_pad_bot / 2, w_bot_lead_taper),
+            Point(w_pad_bot / 2 + w_bot_lead_taper, 0μm)
+        ), bottom_lead; centered=true)
+    bottom_pad = Align.below(Rectangle(w_bot_pad, h_bot_pad),
+        bottom_lead_taper; centered=true)
 
     render!(jj, top_lead, LAYER_RECORD.junction_pattern)
     render!(jj, jj_finger, LAYER_RECORD.junction_pattern)
+    render!(jj, top_lead_taper, LAYER_RECORD.junction_pattern)
+    render!(jj, top_pad, LAYER_RECORD.junction_pattern)
     render!(jj, jj_taper, LAYER_RECORD.junction_pattern)
     render!(jj, bottom_lead, LAYER_RECORD.junction_pattern)
+    render!(jj, bottom_lead_taper, LAYER_RECORD.junction_pattern)
+    render!(jj, bottom_pad, LAYER_RECORD.junction_pattern)
     render!(jj, union2d(jj_rect, jj_finger), LAYER_RECORD.SE1_device)
     render!(jj, jj_taper, LAYER_RECORD.SE1_device)
+
+
+    # ground cutout
+    a1 = Align.below(Rectangle(2μm, 2μm), bottom_lead; centered=true) - Point(0μm, h_excess - etch_bias_LL)
+    a2 = Align.below(Rectangle(6μm, 2μm), a1; centered=true)
+
+    a3 = Align.above(Rectangle(2μm, 2μm), top_lead; centered=true) + Point(0μm, h_excess - etch_bias_LL)
+    a4 = Align.above(Rectangle(6μm, 2μm), a3; centered=true)
+
+    render!(jj, union2d(a1, a2), LAYER_RECORD.metal_negative)
+    render!(jj, union2d(a3, a4), LAYER_RECORD.metal_negative)
+
     return jj
 end
 
-function make_SQUID(; w_jj1=0.1μm, h_jj1=0.14μm, w_jj2=0.12μm, h_jj2=0.14μm, h_ground_island=20μm, h_excess=2μm, w_pad_bot=2μm, w_pad_top=2μm, L_taper=0.5μm, L_finger=1.36μm, w_squid=10μm)
-    asquid = Cell(uniquename("asymmetric squid"), nm)
+function make_SQUID(; w_jj1=0.1μm, h_jj1=0.14μm, w_jj2=0.12μm, h_jj2=0.14μm, h_ground_island=20μm, h_excess=3μm, w_pad_bot=2μm, w_pad_top=2μm, L_taper=0.5μm, L_finger=1.36μm, w_squid=10μm)
+    asquid = Cell(uniquename("asquid"), nm)
     # simulation geometry
     jj1 = SimpleDolanJunction(; w_jj=w_jj1, h_jj=h_jj1, h_ground_island=h_ground_island, h_excess=h_excess, w_pad_bot=w_pad_bot, w_pad_top=w_pad_top, L_taper=L_taper, L_finger=L_finger)
     jj2 = SimpleDolanJunction(; w_jj=w_jj2, h_jj=h_jj2, h_ground_island=h_ground_island, h_excess=h_excess, w_pad_bot=w_pad_bot, w_pad_top=w_pad_top, L_taper=L_taper, L_finger=L_finger)
@@ -168,7 +208,6 @@ function make_SQUID(; w_jj1=0.1μm, h_jj1=0.14μm, w_jj2=0.12μm, h_jj2=0.14μm,
 end
 
 function claw_cpl(; w_shield=2μm, w_claw=35μm, l_claw=160μm, claw_gap=cpw_style.gap + 2 * etch_bias_LL, w_grasp=90μm, arm_trace=cpw_style.trace - 2 * etch_bias_LL)
-    #claw_cpl = Cell(uniquename("claw_cpl"), nm)
     claw_hole1 = centered(Rectangle(arm_trace, claw_gap))
     claw_hole2 =
         Rectangle(w_grasp + 2 * w_shield + 4 * claw_gap + 2 * w_claw - 2 * etch_bias_LL, w_claw + 2 * claw_gap - 2 * etch_bias_LL)
@@ -196,16 +235,13 @@ function claw_cpl(; w_shield=2μm, w_claw=35μm, l_claw=160μm, claw_gap=cpw_sty
     )
 
     csr_claw_cpl = CoordinateSystem("claw_cpl", nm)
-    csr_claw_trace = CoordinateSystem("claw_trace", nm)
 
-    place!(csr_claw_cpl, union2d([claw_hole1, claw_hole2], [claw_hole3, claw_hole4]) + Point(0μm, w_claw + claw_gap * 1.5 + w_shield * 1), LAYER_RECORD.metal_positive) # move the
-    place!(csr_claw_trace, union2d([claw1, claw2], [claw3, claw4]) + Point(0μm, w_claw + claw_gap * 1.5 + w_shield * 1), LAYER_RECORD.metal_negative)
-    return Cell(csr_claw_cpl), Cell(csr_claw_trace)
+    place!(csr_claw_cpl, claw + Point(0μm, w_claw + claw_gap * 1.5 + w_shield * 1), LAYER_RECORD.metal_negative) # move the
+    return Cell(csr_claw_cpl)
 end
 
 function qubit_cap_cross(; cap_width=30μm, cap_length=410μm, cap_gap=30μm, junction_gap=20.0μm, island_rounding=0μm)
     csr_qubit_cap = CoordinateSystem(uniquename("qubit_cap"), nm)
-    csr_qubit_cap_trace = CoordinateSystem(uniquename("qubit_cap"), nm)
 
     # Capacitor metal
     qubitIsland = union2d(
@@ -225,36 +261,27 @@ function qubit_cap_cross(; cap_width=30μm, cap_length=410μm, cap_gap=30μm, ju
     #render!(qubit_cap, diff, LAYER_RECORD.metal_negative)
     #push!(qubit_cap.refs, CellReference(qubit_island, Point(0μm, 0μm)))
 
-    place!(csr_qubit_cap, gapFill, LAYER_RECORD.metal_positive)
-    place!(csr_qubit_cap_trace, qubitIsland, LAYER_RECORD.metal_negative)
+    place!(csr_qubit_cap, diff, LAYER_RECORD.metal_negative)
 
-    claw, claw_trace = claw_cpl()
+    claw = claw_cpl()
 
     qubit_cap = Cell(csr_qubit_cap, nm)
-    qubit_cap_trace = Cell(csr_qubit_cap_trace, nm)
 
-    push!(qubit_cap_trace.refs, CellReference(claw_trace, Point(0μm, cap_length + cap_gap + junction_gap / 2 - etch_bias_LL)))
     push!(qubit_cap.refs, CellReference(claw, Point(0μm, cap_length + cap_gap + junction_gap / 2 - etch_bias_LL)))
-    #push!(qubit_cap.refs, CellReference(claw_trace, Point(0μm, cap_length + cap_gap + junction_gap / 2 - etch_bias_LL)))
 
-    return qubit_cap, qubit_cap_trace
+    return qubit_cap
 end
 
 function make_qubit_cell(;)
-    Qubit_cell = Cell(uniquename("Qubit_cell"), nm)
-    Qubit_cell_trace = Cell(uniquename("Qubit_cell_trace"), nm)
-    qubit_island, qubit_island_trace = qubit_cap_cross()
+    Qubit_cell = Cell(uniquename("Qubit"), nm)
+    qubit_island = qubit_cap_cross()
     jj = make_SQUID()
 
     # the JJs/SQUID
     push!(Qubit_cell.refs, CellReference(qubit_island, Point(0μm, 0μm)))
+    push!(Qubit_cell.refs, CellReference(jj, Point(0μm, 0μm), rot=0))
 
-
-    push!(Qubit_cell_trace.refs, CellReference(qubit_island_trace, Point(0μm, 0μm)))
-    push!(Qubit_cell_trace.refs, CellReference(jj, Point(0μm, 0μm), rot=0))
-    #flatten!(Qubit_cell)
-    #flatten!(Qubit_cell_trace)
-    return Qubit_cell, Qubit_cell_trace
+    return Qubit_cell
 end
 
 function create_resonator(style, p0; total_length=4860μm, coupling_length=400μm, coupling_gap=5μm, bend_radius=50μm, n_meander_turns=5, total_height=1450μm, hanger_length=500μm, w_shield=2μm)
@@ -273,7 +300,6 @@ function create_resonator(style, p0; total_length=4860μm, coupling_length=400μ
             total_length - 3 * coupling_length / 2 - n_bends * pi * bend_radius / 2 -
             arm_length - hanger_length
         ) / n_meander_turns
-
     straight!(path, coupling_length, style)
     turn!(path, -90°, bend_radius)
     straight!(path, hanger_length)
@@ -310,11 +336,11 @@ function generate_Zline_instructions!(path, style, instructions)
         elseif instruction[1] == "turn"
             turn!(path, instruction[2], instruction[3], style)
         elseif instruction[1] == "endZ"
-            straight!(path, 200μm, Paths.TaperCPW(style.trace, style.gap, 3.3μm + 2 * etch_bias_LL, 2.0μm - 2 * etch_bias_LL))
-            straight!(path, 100μm, Paths.CPW(3.3μm + 2 * etch_bias_LL, 2.0μm - 2 * etch_bias_LL))
+            straight!(path, 200μm, Paths.TaperCPW(style.trace, style.gap, 5.5μm + 2 * etch_bias_LL, 2.9μm - 2 * etch_bias_LL))
+            straight!(path, 100μm, Paths.CPW(5.5μm + 2 * etch_bias_LL, 2.9μm - 2 * etch_bias_LL))
             straight!(path, 50μm)
             flux_bias_cell = Cell(uniquename("flux_bias"), nm)
-            flux_bias!(flux_bias_cell, "r", 6.35μm, 2μm, 4.35μm, 3.3μm + 2 * etch_bias_LL, 2μm - 2 * etch_bias_LL) # flux_over, flux_under, flux_cut, z_trace, z_gap,
+            flux_bias!(flux_bias_cell, "r", 6.35μm, 2.9μm, 4.35μm, 5.5μm + 2 * etch_bias_LL, 2.9μm - 2 * etch_bias_LL) # flux_over, flux_under, flux_cut, z_trace, z_gap,
             flux_bias_cell_ref = CellReference(flux_bias_cell, Point(0μm, 0μm), rot=-pi / 2)
             attach!(path, flux_bias_cell_ref, 50μm, i=length(path))
         end
@@ -372,9 +398,9 @@ function generate_XYline_instructions!(path, style, instructions)
         elseif instruction[1] == "turn"
             turn!(path, instruction[2], instruction[3])
         elseif instruction[1] == "endXY"
-            straight!(path, 100μm, Paths.TaperCPW(style.trace, style.gap, 2μm + 2 * etch_bias_LL, 1μm))
-            straight!(path, 100μm, Paths.CPW(2μm + 2 * etch_bias_LL, 1μm))
-            straight!(path, 2μm, Paths.Trace(4μm + 2 * etch_bias_LL))
+            straight!(path, 100μm, Paths.TaperCPW(style.trace, style.gap, 5.5μm + 2 * etch_bias_LL, 2μm))
+            straight!(path, 100μm, Paths.CPW(5.5μm + 2 * etch_bias_LL, 2μm))
+            straight!(path, 2μm, Paths.Trace(5.5μm + 2 * etch_bias_LL + 4μm))
         end
     end
 end
@@ -383,7 +409,6 @@ _is_termination(sty) = occursin("termination", lowercase(string(typeof(sty))))
 
 _seglen(seg) =
     pathlength(seg)
-
 
 """
     center_trace_path(p; skip_terminations=true, skip_zero_trace=true)
@@ -485,10 +510,10 @@ end
 
 function main()
     # Chip
-    device = Cell("device", nm)
-    ground = Cell("ground", nm)
+    design_name = "WAS01"
+    device = Cell(design_name, nm)
 
-    chip = ChipTemplates_CQED.build_device!(device;
+    ChipTemplates_CQED.build_device!(device;
         chip_width=chip_width,
         chip_height=chip_height,
         deadzone_width=deadzone_width,
@@ -505,7 +530,7 @@ function main()
     Z1_path = Path(ptZ1 + Point(0µm, launch_param[:gap0]), α0=αZ1)
     launch!(Z1_path; launch_param...)
     Z1_instructions = [
-        ["straight", 373.9μm - 52.519μm],
+        ["straight", 370.9μm - 58.069μm],
         ["turn", pi / 6, 500μm],
         ["straight", 282μm],
         ["turn", -pi / 6, 500μm],
@@ -565,65 +590,52 @@ function main()
         ["turn", pi / 3.5, 100μm],
         ["straight", 2000μm],
         ["turn", pi * (0.5 - 1 / 3.5), 100μm],
-        ["straight", 449.377μm],
+        ["straight", 449.337μm],
+        #["straight", 200μm],
         ["endXY"]
     ]
     generate_XYline_instructions!(XY4_path, cpw_style, XY4_instructions)
 
-    TL_path_trace = center_trace_path(TL_path)
-    RO1_path_trace = center_trace_path(RO1_path)
-    Z1_path_trace = center_trace_path(Z1_path)
-    XY1_path_trace = center_trace_path(XY1_path)
-    XY2_path_trace = center_trace_path(XY2_path)
-    XY3_path_trace = center_trace_path(XY3_path)
-    XY4_path_trace = center_trace_path(XY4_path)
+    # add the qubit to RO
+    qubit = make_qubit_cell()
+    p_1 = Paths.p1(RO1_path)
+    α_1 = Paths.α1(RO1_path)               # replace with your actual endpoint function
+    push!(device.refs, CellReference(qubit, p_1 - Point(0μm, junction_gap / 2 + cap_length + cap_gap + w_shield + w_claw + claw_gap * 2 - etch_bias_LL), rot=0))
 
-    qubit, qubit_trace = make_qubit_cell()
-    p_end = Paths.p1(RO1_path)
-    α_end = Paths.α1(RO1_path)               # replace with your actual endpoint function
-    push!(ground.refs, CellReference(qubit, p_end - Point(0μm, junction_gap / 2 + cap_length + cap_gap + w_shield + w_claw + claw_gap * 2 - etch_bias_LL), rot=0))
-    push!(device.refs, CellReference(qubit_trace, p_end - Point(0μm, junction_gap / 2 + cap_length + cap_gap + w_shield + w_claw + claw_gap * 2 - etch_bias_LL), rot=0))
+    # add a line to RO current antinode, for convenient of Boolean operation
+    p_0 = Paths.p0(RO1_path)
+    α_0 = Paths.α0(RO1_path)
+    render!(device, rotate(centered(Rectangle(0nm, cpw_style.trace + 2 * cpw_style.gap)), π - α_0) + p_0, LAYER_RECORD.metal_positive)
 
-    metal_trace = TL_path_trace
-    for g in [RO1_path_trace, Z1_path_trace, XY1_path_trace, XY2_path_trace, XY3_path_trace, XY4_path_trace]
-        metal_trace = union2d(metal_trace, g)
-    end
+    # add a line to Z control current antinode, for convenient of Boolean operation
+    p_1 = Paths.p1(Z1_path)
+    α_1 = Paths.α1(Z1_path)
+    render!(device, rotate(centered(Rectangle(0nm, cpw_style.trace + 2 * cpw_style.gap)), α_1 + π / 2) + p_1 + Point(5.5μm / 2 + 2.9μm + 2.9μm - etch_bias_LL, 5.5μm / 2 + 2μm - etch_bias_LL), LAYER_RECORD.metal_positive)
 
-    path_gap = TL_path
-    for g in [RO1_path, Z1_path, XY1_path, XY2_path, XY3_path, XY4_path]
-        path_gap = union2d(path_gap, g)
-    end
-    #flatten!(device)
-    #flatten!(ground)
+    # render all paths
+    render!(device, TL_path, LAYER_RECORD.metal_negative)
+    render!(device, RO1_path, LAYER_RECORD.metal_negative)
+    render!(device, Z1_path, LAYER_RECORD.metal_negative)
+    render!(device, XY1_path, LAYER_RECORD.metal_negative)
+    render!(device, XY2_path, LAYER_RECORD.metal_negative)
+    render!(device, XY3_path, LAYER_RECORD.metal_negative)
+    render!(device, XY4_path, LAYER_RECORD.metal_negative)
 
-    flatten!(device)
-    render!(device, metal_trace, LAYER_RECORD.metal_negative, atol=5nm)
-
-    render!(ground, path_gap, LAYER_RECORD.metal_positive, atol=5nm)
-    render!(ground, metal_trace, LAYER_RECORD.metal_positive, atol=5nm)
-    flatten!(ground)
-
-    #push!(device.refs, CellReference(ground, Point(0nm, 0nm)))
-    render!(device, difference2d(chip, ground), LAYER_RECORD.metal_ground, atol=5nm)
-    #cutout = union2d(chip, path_gap)
-    #render!(device, metal_trace, LAYER_RECORD.metal_negative)
-    #render!(device, path_gap, LAYER_RECORD.metal_negative)
-    #render!(device, cutout, LAYER_RECORD.metal_ground)
-    #render!(device, RO1_path, LAYER_RECORD.metal_negative)
-    #render!(device, Z1_path, LAYER_RECORD.metal_negative)
-    #render!(device, XY1_path, LAYER_RECORD.metal_negative)
-    #render!(device, XY2_path, LAYER_RECORD.metal_negative)
-    #render!(device, XY3_path, LAYER_RECORD.metal_negative)
-    #render!(device, XY4_path, LAYER_RECORD.metal_negative)
+    # add bonding pad label 5/11
     pad_label = centered(Rectangle(launch_param[:flatlen], launch_param[:trace0]))
     for i in [TL_path, Z1_path, XY1_path, XY2_path, XY3_path, XY4_path]
         p_0 = Paths.p0(i)
         α_0 = Paths.α0(i)
-
         render!(device, rotate(pad_label + Point(launch_param[:flatlen] / 2 + launch_param[:gap0], 0nm), α_0) + p_0, LAYER_RECORD.launch_pad)
     end
+    p_1 = Paths.p1(TL_path)
+    α_1 = Paths.α1(TL_path)
+    render!(device, rotate(pad_label + Point(launch_param[:flatlen] / 2 + launch_param[:gap0], 0nm), α_1 + π) + p_1, LAYER_RECORD.launch_pad)
 
-    c_output_gds = Cell("output_gds", nm)
+    #flatten!(device)
+    add_design_name_LL!(device, design_name)
+
+    c_output_gds = Cell("HIERARCHY", nm)
     addref!(c_output_gds, sref(device, rot=-90°)) # correct any rotations
 
     #place!(cs_device, chip, metadata=LayerVocabulary.METAL_POSITIVE)

@@ -6,6 +6,6 @@ if !isfile(joinpath(Pkg.project().path, "Project.toml"))
     Pkg.instantiate()
 end
 
-include(joinpath(@__DIR__, "SingleTransmon_fullchip.jl"))
+include(joinpath(@__DIR__, "SingleTransmon.jl"))
 
 @time "Total" sm = SingleTransmon.single_transmon(save_gds=true)
