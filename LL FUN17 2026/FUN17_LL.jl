@@ -6,7 +6,7 @@ import DeviceLayout: uconvert
 import DeviceLayout: flushtop, flushleft, flushright, below, above
 using CQEDPDK
 import CQEDPDK.LAYER_RECORD
-using CQEDPDK.ChipTemplates_CQED
+using CQEDPDK.ChipTemplates_CQED, CQEDPDK.ReadoutResonators_CQED
 import .CQEDPDK: LayerVocabulary
 
 ## Define constants
@@ -44,6 +44,7 @@ launch_param = Dict(
 
 const GROUND_GRID = 50nm
 
+## qubit
 w_shield = 2μm
 w_claw = 35μm
 l_claw = 160μm
@@ -55,6 +56,15 @@ cap_length = 410μm
 cap_gap = 30μm
 junction_gap = 20.0μm
 island_rounding = 0μm
+
+## resonator
+total_length=4860μm
+coupling_length=400μm
+coupling_gap=5μm
+bend_radius=50μm
+n_meander_turns=5
+total_height=1450μm
+hanger_length=500μm
 
 function add_global_marker!(dev)
     # Elionix recognizable global markers
@@ -120,7 +130,7 @@ function build_transmission_line(; cpw_style=cpw_style)
     (ptL, αL) = ChipTemplates_CQED.launcher_site(16)
     (ptR, αR) = ChipTemplates_CQED.launcher_site(5)
 
-    readout_length = hypot(ptR.x - ptL.x, ptR.y - ptL.y) - (launch_param[:gap0] + launch_param[:flatlen] + launch_param[:taperlen]) * 2 # length of launcher is 650μm
+    readout_length = abs(ptR.x - ptL.x) - (launch_param[:gap0] + launch_param[:flatlen] + launch_param[:taperlen]) * 2 # length of launcher is 650μm
 
     TL_path = Path(
         ptL + Point(launch_param[:gap0], 0.0μm), # 150μm is the "gap" behind the bonding pad
@@ -282,46 +292,6 @@ function make_qubit_cell(;)
     push!(Qubit_cell.refs, CellReference(jj, Point(0μm, 0μm), rot=0))
 
     return Qubit_cell
-end
-
-function create_resonator(style, p0; total_length=4860μm, coupling_length=400μm, coupling_gap=5μm, bend_radius=50μm, n_meander_turns=5, total_height=1450μm, hanger_length=500μm, w_shield=2μm)
-    path = Path(
-        p0 + Point(-coupling_length / 2, -coupling_gap - style.gap * 2 - style.trace - 2 * etch_bias_LL),
-        α0=0°,
-    )
-
-    n_bends = 3 + 2 * n_meander_turns # nμmber of 90 degree bends
-    arm_length = (
-        total_height - hanger_length - n_bends * bend_radius - coupling_gap - style.gap - style.trace / 2 - w_shield - 2 * claw_gap - w_claw
-    )
-    # Length of straight sections in meander
-    straight_length =
-        (
-            total_length - 3 * coupling_length / 2 - n_bends * pi * bend_radius / 2 -
-            arm_length - hanger_length
-        ) / n_meander_turns
-    straight!(path, coupling_length, style)
-    turn!(path, -90°, bend_radius)
-    straight!(path, hanger_length)
-    #attach!(path, CoordinateSystemReference(bridge), hanger_length / 2)
-    turn!(path, -90°, bend_radius)
-    # Center of the straight section of meander lines up with coupling midpoint (and claw)
-    straight!(path, straight_length / 2 + coupling_length / 2)
-    turn!(path, 180°, bend_radius)
-
-    # Start the meander with a full straight section
-    meander_length =
-        (n_meander_turns - 1) * (straight_length + pi * bend_radius) + straight_length / 2 -
-        bend_radius
-    meander!(path, meander_length, straight_length, bend_radius, -180°)
-    turn!(path, -90°, bend_radius)
-    straight!(path, arm_length)
-    #attach!(path, CoordinateSystemReference(bridge), arm_length / 2)
-    #turn!(path, -pi/2, turnRadRes, cpw_style)
-    #straight!(path, L2, cpw_style)
-    #qubit = make_qubit_cell()
-    #attach!(path, CellReference(qubit), pathlength(path[end]))
-    return path
 end
 
 # function for Z path
@@ -523,8 +493,11 @@ function main()
     TL_path = build_transmission_line(cpw_style=cpw_style)
 
     (ptL, αL) = ChipTemplates_CQED.launcher_site(16)
-    RO1_path = create_resonator(cpw_style, ptL + Point(1500μm, 0μm))
 
+    RO1_path = Path(
+        ptL + Point(1500μm, 0μm),
+        α0=αL)
+    ReadoutResonators_CQED.create_resonator!(RO1_path; style=cpw_style, total_length=total_length, coupling_length=coupling_length, coupling_gap=coupling_gap, bend_radius=bend_radius, n_meander_turns=n_meander_turns, total_height=total_height, hanger_length=hanger_length, w_shield=w_shield, claw_gap = claw_gap, w_claw = w_claw, etch_bias_LL=etch_bias_LL)
     # Z line
     (ptZ1, αZ1) = ChipTemplates_CQED.launcher_site(11)
     Z1_path = Path(ptZ1 + Point(0µm, launch_param[:gap0]), α0=αZ1)
