@@ -23,7 +23,9 @@ cutout_height=100μm
 
 ## Build chip
 design_name = "WAS01"
-device = CoordinateSystem(design_name, nm)
+g = SchematicGraph(design_name)
+floorplan = plan(g)
+device = floorplan.coordinate_system
 
 ChipTemplates_CQED.build_device!(device;
 	chip_width = chip_width,
@@ -132,3 +134,24 @@ c = Cell("test02", nm)
 render!(c, device, L1_TARGET, strict = :no, simulation = false)
 flatten!(c)
 save(joinpath(@__DIR__, "test02.gds"), c)
+
+# Need to pass generated physical group names so they can be retained
+tech = CQEDPDK.singlechip_solidmodel_target()
+sm = SolidModel("test", overwrite = true)
+
+# Adjust mesh_scale to increase the resolution of the mesh, < 1 will result in greater
+# resolution near edges of the geometry.
+meshing_parameters = SolidModels.MeshingParameters(
+	mesh_scale = 1.0,
+	α_default = 0.9,
+	mesh_order = 2,
+	options = Dict("General.Verbosity" => 1.0), # General Gmsh option input
+)
+place!(sch.coordinate_system, device)
+sch.checked[] = true
+render!(sm, sch, tech, strict = :no, meshing_parameters = meshing_parameters)
+
+# SolidModels.gmsh.option.set_number("General.NumThreads", 1) # Force single-threaded (deterministic) meshing
+SolidModels.gmsh.model.mesh.generate(3) # runs without error
+#save(joinpath(@__DIR__, "single_transmon.msh2"), sm)
+
