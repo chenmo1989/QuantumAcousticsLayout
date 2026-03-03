@@ -105,6 +105,6 @@ ReadoutResonators_CQED.create_resonator!(
 	RO1_path; cpw_style = cpw_style, res_param...,
 )
 
-render!(device, RO_path, LAYER_RECORD.metal_negative)
+render!(device, RO1_path, LAYER_RECORD.metal_negative)
 
 save(joinpath(@__DIR__, "test03.gds"), device)
