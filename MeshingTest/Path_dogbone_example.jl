@@ -51,3 +51,26 @@ refs(cs)
 layer_record = Dict(:bridge => GDSMeta(1), :metal_negative => GDSMeta())
 cell = Cell(cs; map_meta = m -> layer_record[layer(m)])
 # Could also say cell = render!(Cell("newcell", nm), cs; map_meta=...)
+
+######################################################
+#################Build Solid Model####################
+######################################################
+
+place!(csr, centered(Rectangle(30μm, 15μm)), :base)
+place!.(cs, offset(bounds(cs), 200μm), :substrate)
+place!(cs, bounds(cs), :simulated_area)
+zmap = (m) -> layer(m) == :simulated_area ? -1000μm : 0μm
+postrender_ops = [
+	("substrate_extrusion", SolidModels.extrude_z!, ("substrate", -500μm))
+	("simulated_area_extrusion", SolidModels.extrude_z!, ("simulated_area", 2000μm))
+	("metal", SolidModels.difference_geom!, ("substrate", "metal_negative"))
+	SolidModels.staple_bridge_postrendering(; base = "base", bridge = "bridge")
+]
+sm = SolidModel("model", overwrite = true)
+SolidModels.gmsh.option.setNumber("General.Verbosity", 0)
+render!(sm, cs; zmap = zmap, postrender_ops = postrender_ops);
+#
+SolidModels.gmsh.model.mesh.generate(3)
+
+SolidModels.gmsh.fltk.run()
+#save(joinpath(@__DIR__, "test02.msh2"), sm)

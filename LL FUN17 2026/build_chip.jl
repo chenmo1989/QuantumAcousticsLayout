@@ -2,7 +2,7 @@ using DeviceLayout, DeviceLayout.PreferredUnits
 using FileIO
 
 design_name = "WAS01"
-device = Cell(design_name, nm)
+device = CoordinateSystem(design_name, nm)
 
 chip_width=5mm
 chip_height=5mm
@@ -17,8 +17,8 @@ writeable_width = chip_width - 2 * deadzone_width
 writeable_height = chip_height - 2 * deadzone_height
 
 writeable_region =
-    centered(Rectangle(writeable_width, writeable_height) +
-                Point(deadzone_width, deadzone_height))
+	centered(Rectangle(writeable_width, writeable_height) +
+			 Point(deadzone_width, deadzone_height))
 cutout = Align.flushbottom(Align.flushleft(Rectangle(cutout_height, cutout_width), chip), chip)
 
 render!(device, chip, GDSMeta(703, 0))

@@ -1,0 +1,16 @@
+render_solidmodel | [Warn] Using `MeshingParameters` is deprecated!
+render_solidmodel | [Info] extrude_z!(sm, simulated_area, 2 mm, 2): (simulated_area, 2) is not a physical group.
+render_solidmodel | [Info] union_geom!(sm, metal, metal_positive, 2, 2): (metal_positive, 2) is not a physical group, using only (metal, 2).
+render_solidmodel | [Error] difference_geom!(sm, simulated_area_extrusion, substrate, 3, 3): (simulated_area_extrusion, 3) is not a physical group.
+render_solidmodel | [Error] intersect_geom!(sm, bridge, bridge_base, 2, 2): (bridge, 2) is not a physical group.
+render_solidmodel | [Error] translate!(sm, _shadow, 0 μm, 0 μm, 10 μm, 2; copy=true): (_shadow, 2) is not a physical group.
+render_solidmodel | [Error] difference_geom!(sm, bridge, bridge_base, 2, 2): (bridge, 2) is not a physical group.
+render_solidmodel | [Info] get_boundary(sm, _shadow, 2): (_shadow, 2) is not a physical group, thus has no boundary.
+render_solidmodel | [Info] get_boundary(sm, _foot, 2): (_foot, 2) is not a physical group, thus has no boundary.
+render_solidmodel | [Error] intersect_geom!(sm, _shadow_bdy, _foot_bdy, 1, 1): (_shadow_bdy, 1) is not a physical group.
+render_solidmodel | [Info] extrude_z!(sm, _leg, 10 μm, 1): (_leg, 1) is not a physical group.
+render_solidmodel | [Info] remove_group!(sm, _shadow, 2; recursive=true, remove_entities=true): (_shadow, 2) is not a physical group.
+render_solidmodel | [Info] remove_group!(sm, _foot, 2; recursive=true, remove_entities=true): (_foot, 2) is not a physical group.
+render_solidmodel | [Error] union_geom!(sm, _leg, _platform, 2, 2): (_leg, 2) and (_platform, 2) are not physical groups.
+render_solidmodel | [Info] union_geom!(sm, metal, bridge_metal, 2, 2): (bridge_metal, 2) is not a physical group, using only (metal, 2).
+render_solidmodel | [Info] difference_geom!(sm, metal, port, 2, 2): (port, 2) is not a physical group, using only (metal, 2).

@@ -23,10 +23,9 @@ cutout_height=100μm
 
 ## Build chip
 design_name = "WAS01"
-g = SchematicGraph(design_name)
-floorplan = plan(g)
-device = floorplan.coordinate_system
+device = CoordinateSystem(design_name, nm)
 
+"""
 ChipTemplates_CQED.build_device!(device;
 	chip_width = chip_width,
 	chip_height = chip_height,
@@ -35,6 +34,11 @@ ChipTemplates_CQED.build_device!(device;
 	cutout_width = cutout_width,
 	cutout_height = cutout_height,
 )
+"""
+
+chip = centered(Rectangle(chip_width, chip_height))
+
+place!(device, chip, LayerVocabulary.CHIP_AREA)
 
 ########################################
 ########Add Transmission Line###########
@@ -79,58 +83,38 @@ place!(device, TL_path, LayerVocabulary.METAL_NEGATIVE)
 
 
 ########################################
-########Add Readout Resonator###########
+########Turn to Solid Model#############
 ########################################
 
-## Define parameters
-total_length=4860μm
-coupling_length=400μm
-coupling_gap=5μm
-bend_radius=50μm
-n_meander_turns=5
-total_height=1450μm
-hanger_length=500μm
-w_shield=2μm
-w_claw = 35μm
-claw_gap = 6μm
+"""
+Map SemanticMeta(:some_layer) -> GDSMeta(layer, datatype) using CQEDPDK.LAYER_RECORD.
 
-## Create resonator
-RO_path = Path(
-	ptL + Point(-coupling_length / 2, -coupling_gap - cpw_style.gap * 2 - cpw_style.trace) +
-	Point(1500μm, 0μm),
-	α0 = αL,
-)
+- Passes through GDSMeta unchanged.
+- Returns NORENDER_META unchanged (so DeviceLayout can skip it).
+- Errors on unknown SemanticMeta keys (good for catching typos).
+"""
+function map_meta_from_layer_record(m)
+	# Let already-concrete GDS metadata pass through.
+	m isa GDSMeta && return m
 
-n_bends = 3 + 2 * n_meander_turns # nμmber of 90 degree bends
-arm_length = (
-	total_height - hanger_length - n_bends * bend_radius - coupling_gap - cpw_style.gap - cpw_style.trace / 2 - w_shield - 2 * claw_gap - w_claw
-)
-# Length of straight sections in meander
-straight_length =
-	(
-		total_length - 3 * coupling_length / 2 - n_bends * pi * bend_radius / 2 -
-		arm_length - hanger_length
-	) / n_meander_turns
-straight!(RO_path, coupling_length, cpw_style)
-turn!(RO_path, -90°, bend_radius)
-straight!(RO_path, hanger_length)
-turn!(RO_path, -90°, bend_radius)
-# Center of the straight section of meander lines up with coupling midpoint (and claw)
-straight!(RO_path, straight_length / 2 + coupling_length / 2)
-turn!(RO_path, 180°, bend_radius)
+	# If you rely on NORENDER_META anywhere:
+	m === DeviceLayout.NORENDER_META && return m
 
-# Start the meander with a full straight section
-meander_length =
-	(n_meander_turns - 1) * (straight_length + pi * bend_radius) + straight_length / 2 -
-	bend_radius
-meander!(RO_path, meander_length, straight_length, bend_radius, -180°)
-turn!(RO_path, -90°, bend_radius)
-straight!(RO_path, arm_length)
+	# Only handle SemanticMeta
+	if m isa SemanticMeta
+		k = layer(m)  # should be :metal_negative, :junction, etc.
+		haskey(LAYER_RECORD, k) || error("map_meta: SemanticMeta($k) not in LAYER_RECORD")
+		rec = LAYER_RECORD[k]
+		return GDSMeta(layer(rec), datatype(rec))
+	end
 
-render!(device, RO_path, LayerVocabulary.METAL_NEGATIVE)
-
+	# If you also have other Meta types, either pass-through or decide a policy:
+	error("map_meta: don't know how to map metadata of type $(typeof(m)): $m")
+end
 
 c = Cell("test02", nm)
+
+#render!(c, device; map_meta = map_meta_from_layer_record)
 render!(c, device, L1_TARGET, strict = :no, simulation = false)
 flatten!(c)
 save(joinpath(@__DIR__, "test02.gds"), c)
@@ -147,11 +131,22 @@ meshing_parameters = SolidModels.MeshingParameters(
 	mesh_order = 2,
 	options = Dict("General.Verbosity" => 1.0), # General Gmsh option input
 )
-place!(sch.coordinate_system, device)
-sch.checked[] = true
-render!(sm, sch, tech, strict = :no, meshing_parameters = meshing_parameters)
+
+place!.(device, offset(bounds(device), 200μm), :substrate)
+place!(device, bounds(device), :simulated_area)
+zmap = (m) -> layer(m) == :simulated_area ? -1000μm : 0μm
+postrender_ops = [
+	("substrate_extrusion", SolidModels.extrude_z!, ("substrate", -500μm))
+	("simulated_area_extrusion", SolidModels.extrude_z!, ("simulated_area", 2000μm))
+	("metal", SolidModels.difference_geom!, ("substrate", "metal_negative"))
+]
+
+SolidModels.gmsh.option.setNumber("General.Verbosity", 0)
+render!(sm, device; zmap = zmap, postrender_ops = postrender_ops);
+SolidModels.gmsh.model.mesh.generate(3)
+SolidModels.gmsh.fltk.run()
 
 # SolidModels.gmsh.option.set_number("General.NumThreads", 1) # Force single-threaded (deterministic) meshing
-SolidModels.gmsh.model.mesh.generate(3) # runs without error
-#save(joinpath(@__DIR__, "single_transmon.msh2"), sm)
+#SolidModels.gmsh.model.mesh.generate(3) # runs without error
+save(joinpath(@__DIR__, "test02.msh2"), sm)
 

@@ -21,12 +21,12 @@ design_name = "WAS01"
 device = Cell(design_name, nm)
 
 ChipTemplates_CQED.build_device!(device;
-    chip_width=chip_width,
-    chip_height=chip_height,
-    deadzone_width=deadzone_width,
-    deadzone_height=deadzone_height,
-    cutout_width=cutout_width,
-    cutout_height=cutout_height
+	chip_width = chip_width,
+	chip_height = chip_height,
+	deadzone_width = deadzone_width,
+	deadzone_height = deadzone_height,
+	cutout_width = cutout_width,
+	cutout_height = cutout_height,
 )
 
 ########################################
@@ -34,15 +34,15 @@ ChipTemplates_CQED.build_device!(device;
 ########################################
 
 ## Define parameters
-cpw_style = Paths.SimpleCPW(10µm , 6μm )
+cpw_style = Paths.SimpleCPW(10µm, 6μm)
 launch_param = Dict(
-    :extround => 0.0μm,
-    :trace0 => 200.0μm,
-    :trace1 => 10.0μm,
-    :gap0 => 130.0μm,
-    :gap1 => 6.0μm,
-    :flatlen => 200.0μm,
-    :taperlen => 150.0μm,
+	:extround => 0.0μm,
+	:trace0 => 200.0μm,
+	:trace1 => 10.0μm,
+	:gap0 => 130.0μm,
+	:gap1 => 6.0μm,
+	:flatlen => 200.0μm,
+	:taperlen => 150.0μm,
 )
 
 ## Create transmission line
@@ -52,19 +52,19 @@ launch_param = Dict(
 readout_length = abs(ptR.x - ptL.x) - (launch_param[:gap0] + launch_param[:flatlen] + launch_param[:taperlen]) * 2 # length of launcher is 650μm
 
 TL_path = Path(
-    ptL + Point(launch_param[:gap0], 0.0μm), # 150μm is the "gap" behind the bonding pad
-    α0=αL,
-    name="p_ro",
-    metadata=LAYER_RECORD.metal_negative
+	ptL + Point(launch_param[:gap0], 0.0μm), # 150μm is the "gap" behind the bonding pad
+	α0 = αL,
+	name = "p_ro",
+	metadata = LAYER_RECORD.metal_negative,
 )
 
 launch!(TL_path; extround = 0.0μm,
-    trace0 = 200.0μm,
-    trace1 = 10.0μm,
-    gap0 = 130.0μm,
-    gap1 = 6.0μm,
-    flatlen = 200.0μm,
-    taperlen = 150.0μm)
+	trace0 = 200.0μm,
+	trace1 = 10.0μm,
+	gap0 = 130.0μm,
+	gap1 = 6.0μm,
+	flatlen = 200.0μm,
+	taperlen = 150.0μm)
 straight!(TL_path, readout_length, cpw_style)
 launch!(TL_path; launch_param...)
 
@@ -88,21 +88,21 @@ claw_gap = 6μm
 
 ## Create resonator
 RO_path = Path(
-    ptL + Point(-coupling_length / 2, -coupling_gap - cpw_style.gap * 2 - cpw_style.trace) +
-    Point(1500μm, 0μm),
-    α0=αL
+	ptL + Point(-coupling_length / 2, -coupling_gap - cpw_style.gap * 2 - cpw_style.trace) +
+	Point(1500μm, 0μm),
+	α0 = αL,
 )
 
 n_bends = 3 + 2 * n_meander_turns # nμmber of 90 degree bends
 arm_length = (
-    total_height - hanger_length - n_bends * bend_radius - coupling_gap - cpw_style.gap - cpw_style.trace / 2 - w_shield - 2 * claw_gap - w_claw
+	total_height - hanger_length - n_bends * bend_radius - coupling_gap - cpw_style.gap - cpw_style.trace / 2 - w_shield - 2 * claw_gap - w_claw
 )
 # Length of straight sections in meander
 straight_length =
-    (
-        total_length - 3 * coupling_length / 2 - n_bends * pi * bend_radius / 2 -
-        arm_length - hanger_length
-    ) / n_meander_turns
+	(
+		total_length - 3 * coupling_length / 2 - n_bends * pi * bend_radius / 2 -
+		arm_length - hanger_length
+	) / n_meander_turns
 straight!(RO_path, coupling_length, cpw_style)
 turn!(RO_path, -90°, bend_radius)
 straight!(RO_path, hanger_length)
@@ -113,8 +113,8 @@ turn!(RO_path, 180°, bend_radius)
 
 # Start the meander with a full straight section
 meander_length =
-    (n_meander_turns - 1) * (straight_length + pi * bend_radius) + straight_length / 2 -
-    bend_radius
+	(n_meander_turns - 1) * (straight_length + pi * bend_radius) + straight_length / 2 -
+	bend_radius
 meander!(RO_path, meander_length, straight_length, bend_radius, -180°)
 turn!(RO_path, -90°, bend_radius)
 straight!(RO_path, arm_length)
