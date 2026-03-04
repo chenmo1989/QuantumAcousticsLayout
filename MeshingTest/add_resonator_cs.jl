@@ -36,6 +36,7 @@ ChipTemplates_CQED.build_device!(device;
 )
 """
 
+## to Simplify things for building the mesh and for palace model
 chip = centered(Rectangle(chip_width, chip_height))
 
 place!(device, chip, LayerVocabulary.CHIP_AREA)
@@ -79,8 +80,69 @@ launch!(TL_path; extround = 0.0μm,
 straight!(TL_path, readout_length, cpw_style)
 launch!(TL_path; launch_param...)
 
-place!(device, TL_path, LayerVocabulary.METAL_NEGATIVE)
+csport = CoordinateSystem(uniquename("port"), nm)
+render!(
+	csport,
+	only_simulated(centered(Rectangle(cpw_style.trace, cpw_style.trace))),
+	LayerVocabulary.PORT,
+)
+# Attach with port center `cpw_width` from the end (instead of `cpw_width/2`) to avoid corner effects
+attach!(TL_path, sref(csport), cpw_style.trace, i = 4) # @ start
+attach!(TL_path, sref(csport), readout_length / 2 - cpw_style.trace, i = 5) # @ end
 
+place!(device, TL_path, LayerVocabulary.METAL_NEGATIVE)
+########################################
+########Add Readout Resonator###########
+########################################
+
+## Define parameters
+total_length=4860μm
+coupling_length=400μm
+coupling_gap=5μm
+bend_radius=50μm
+n_meander_turns=5
+total_height=1450μm
+hanger_length=500μm
+w_shield=2μm
+w_claw = 35μm
+claw_gap = 6μm
+
+## Create resonator
+RO_path = Path(
+	ptL + Point(-coupling_length / 2, -coupling_gap - cpw_style.gap * 2 - cpw_style.trace) +
+	Point(1500μm, 0μm),
+	α0 = αL,
+)
+
+n_bends = 3 + 2 * n_meander_turns # nμmber of 90 degree bends
+arm_length = (
+	total_height - hanger_length - n_bends * bend_radius - coupling_gap - cpw_style.gap - cpw_style.trace / 2 - w_shield - 2 * claw_gap - w_claw
+)
+# Length of straight sections in meander
+straight_length =
+	(
+		total_length - 3 * coupling_length / 2 - n_bends * pi * bend_radius / 2 -
+		arm_length - hanger_length
+	) / n_meander_turns
+
+straight!(RO_path, coupling_length, cpw_style)
+turn!(RO_path, -90°, bend_radius)
+straight!(RO_path, hanger_length)
+turn!(RO_path, -90°, bend_radius)
+# Center of the straight section of meander lines up with coupling midpoint (and claw)
+straight!(RO_path, straight_length / 2 + coupling_length / 2)
+turn!(RO_path, 180°, bend_radius)
+
+# Start the meander with a full straight section
+meander_length =
+	(n_meander_turns - 1) * (straight_length + pi * bend_radius) + straight_length / 2 -
+	bend_radius
+meander!(RO_path, meander_length, straight_length, bend_radius, -180°)
+turn!(RO_path, -90°, bend_radius)
+straight!(RO_path, arm_length)
+terminate!(RO_path) # for simulation purpose, since we do not have the claw/qubit to terminate it.
+
+place!(device, RO_path, LayerVocabulary.METAL_NEGATIVE)
 
 ########################################
 ########Turn to Solid Model#############
@@ -115,7 +177,7 @@ end
 c = Cell("test02", nm)
 
 #render!(c, device; map_meta = map_meta_from_layer_record)
-render!(c, device, L1_TARGET, strict = :no, simulation = false)
+render!(c, device, L1_TARGET, strict = :no, simulation = true)
 flatten!(c)
 save(joinpath(@__DIR__, "test02.gds"), c)
 
@@ -132,21 +194,20 @@ meshing_parameters = SolidModels.MeshingParameters(
 	options = Dict("General.Verbosity" => 1.0), # General Gmsh option input
 )
 
-place!.(device, offset(bounds(device), 200μm), :substrate)
-place!(device, bounds(device), :simulated_area)
+#place!.(device, offset(bounds(device), 200μm), :substrate)
+#place!(device, bounds(device), :simulated_area)
+place!(device, centered(Rectangle(5mm, 3.5mm), on_pt = Point(0mm, 0.75mm)), :simulated_area)
 zmap = (m) -> layer(m) == :simulated_area ? -1000μm : 0μm
 postrender_ops = [
-	("substrate_extrusion", SolidModels.extrude_z!, ("substrate", -500μm))
+	("substrate_extrusion", SolidModels.extrude_z!, ("simulated_area", -500μm))
 	("simulated_area_extrusion", SolidModels.extrude_z!, ("simulated_area", 2000μm))
-	("metal", SolidModels.difference_geom!, ("substrate", "metal_negative"))
+	("metal", SolidModels.difference_geom!, ("simulated_area", "metal_negative"))
 ]
 
 SolidModels.gmsh.option.setNumber("General.Verbosity", 0)
 render!(sm, device; zmap = zmap, postrender_ops = postrender_ops);
-SolidModels.gmsh.model.mesh.generate(3)
-SolidModels.gmsh.fltk.run()
+#SolidModels.gmsh.model.mesh.generate(3)
+#SolidModels.gmsh.fltk.run()
 
-# SolidModels.gmsh.option.set_number("General.NumThreads", 1) # Force single-threaded (deterministic) meshing
-#SolidModels.gmsh.model.mesh.generate(3) # runs without error
 save(joinpath(@__DIR__, "test02.msh2"), sm)
 
