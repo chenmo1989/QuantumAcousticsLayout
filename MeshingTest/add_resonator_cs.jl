@@ -69,9 +69,9 @@ TL_path = Path(
 	metadata = LayerVocabulary.METAL_NEGATIVE,
 )
 
-launch!(TL_path; launch_param...)
+#launch!(TL_path; launch_param...)
 straight!(TL_path, readout_length, cpw_style)
-launch!(TL_path; launch_param...)
+#launch!(TL_path; launch_param...)
 
 if false
 	csport = CoordinateSystem(uniquename("port"), nm)
@@ -81,8 +81,8 @@ if false
 		LayerVocabulary.PORT,
 	)
 	# Attach with port center `cpw_width` from the end (instead of `cpw_width/2`) to avoid corner effects
-	attach!(TL_path, sref(csport), cpw_style.trace, i = 4) # @ start
-	attach!(TL_path, sref(csport), readout_length / 2 - cpw_style.trace, i = 4) # @ end
+	attach!(TL_path, sref(csport), cpw_style.trace, i = 1) # @ start
+	attach!(TL_path, sref(csport), readout_length / 2 - cpw_style.trace, i = 1) # @ end
 else
 	# Helper: port meta with index
 	# Make two tiny port CS templates, identical geometry, different metadata index
@@ -101,8 +101,8 @@ else
 	)
 
 	# Attach onto TL_path segment i=4 (this i is still your path-segment selector)
-	attach!(TL_path, sref(csport1), cpw_style.trace, i = 4) # @ start
-	attach!(TL_path, sref(csport2), readout_length / 2 - cpw_style.trace, i = 4) # @ end
+	attach!(TL_path, sref(csport1), cpw_style.trace, i = 1) # @ start
+	attach!(TL_path, sref(csport2), readout_length / 2 - cpw_style.trace + 1000μm, i = 1) # @ end
 end
 
 place!(device, TL_path, LayerVocabulary.METAL_NEGATIVE)
@@ -200,6 +200,16 @@ postrender_ops = vcat(
 			SolidModels.intersect_geom!,
 			("metal", "simulated_area_extrusion", 2, 3),
 		),
+		(
+			"metal",
+			SolidModels.difference_geom!,
+			("metal", "port_1", 2, 2),
+		),
+		(
+			"metal",
+			SolidModels.difference_geom!,
+			("metal", "port_2", 2, 2),
+		),
 		(   # Intersect chip volume with simulation volume
 			"substrate", # New physical group name
 			SolidModels.intersect_geom!, # Operation
@@ -231,7 +241,12 @@ sm = SolidModel("test"; overwrite = true)
 
 SolidModels.gmsh.option.setNumber("General.Verbosity", 0)
 
-render!(sm, device; zmap = zmap, postrender_ops = postrender_ops, retained_physical_groups = retained_physical_groups, simulation = true);
+if true
+	render!(sm, device; zmap = zmap, postrender_ops = postrender_ops, retained_physical_groups = retained_physical_groups, simulation = true);
+else
+	tech = CQEDPDK.singlechip_solidmodel_target("port_1", "port_2")
+	render!(sm, c, tech)
+end
 SolidModels.gmsh.model.mesh.generate(3) # Generate default mesh
 # save("model.stp", sm) # Use standard STEP format
 SolidModels.gmsh.fltk.run()
