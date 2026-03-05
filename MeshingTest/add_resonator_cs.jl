@@ -25,7 +25,6 @@ cutout_height=100μm
 design_name = "WAS01"
 device = CoordinateSystem(design_name, nm)
 
-"""
 ChipTemplates_CQED.build_device!(device;
 	chip_width = chip_width,
 	chip_height = chip_height,
@@ -35,12 +34,11 @@ ChipTemplates_CQED.build_device!(device;
 	cutout_height = cutout_height,
 )
 
-"""
 ## to Simplify things for building the mesh and for palace model
+"""
 chip = centered(Rectangle(chip_width, chip_height))
-
-place!(device, (chip), LayerVocabulary.CHIP_AREA)
-#place!(device, chip, LayerVocabulary.NORENDER_META)
+place!(device, chip, LayerVocabulary.CHIP_AREA)
+"""
 
 ########################################
 ########Add Transmission Line###########
@@ -147,6 +145,7 @@ place!(device, RO_path, LayerVocabulary.METAL_NEGATIVE)
 
 ############Bounding the simulation area############
 place!(device, centered(Rectangle(readout_length / 2, 3mm), on_pt = Point(-0.91mm, 0.85mm)), LayerVocabulary.SIMULATED_AREA)
+#place!(device, bounds(device), :simulated_area)
 
 c = Cell("test02", nm)
 render!(c, device, L1_TARGET, strict = :no, simulation = true)
@@ -156,28 +155,77 @@ save(joinpath(@__DIR__, "test02.gds"), c)
 ########################################
 ########Turn to Solid Model#############
 ########################################
-zmap = (m) -> layer(m) == :simulated_area ? -1000μm : 0μm
-postrender_ops = [
-	("substrate_extrusion", SolidModels.extrude_z!, ("chip_area", -500μm))
-	("simulated_area_extrusion", SolidModels.extrude_z!, ("simulated_area", 2000μm))
-	("metal", SolidModels.difference_geom!, ("chip_area", "metal_negative"))
+
+#zmap = (m) -> layer(m) == :simulated_area ? -1000μm : 0μm
+
+# Define z heights and thickness (where nonzero)
+layer_z = Dict(:chip_area => -525μm, :simulated_area => -1mm)
+layer_thickness = Dict(:chip_area => 525μm, :simulated_area => 2mm)
+zmap = (m) -> get(layer_z, layer(m), 0μm)
+
+# Define postrendering operations:
+# Extrusions, geometric Boolean operations, and other transformations
+postrender_ops = vcat(
+	[   # Extrude layers with nonzero thickness
+		(string(layer) * "_extrusion", SolidModels.extrude_z!, (layer, thickness)) for
+		(layer, thickness) in pairs(layer_thickness)
+	],
+	[   # sm["chip_sim"] = intersect_geom!(sm, "simulated_area_extrusion", ...)
+		(   # Get metal ground plane by subtracting negative from writeable area
+			"metal", # Output group name
+			SolidModels.difference_geom!, # Operation
+			("writeable_area", "metal_negative", 2, 2), # (object, tool, object_dim, tool_dim)
+			:remove_object => true, # Remove "writeable_area" group after operation
+			:remove_tool => true # Remove "metal_negative" group after operation
+		),
+		(
+			"metal",
+			SolidModels.intersect_geom!,
+			("metal", "simulated_area_extrusion", 2, 3),
+		),
+		(   # Intersect chip volume with simulation volume
+			"substrate", # New physical group name
+			SolidModels.intersect_geom!, # Operation
+			# Arguments: Object, tool, object dimension, tool dimension
+			("simulated_area_extrusion", "chip_area_extrusion", 3, 3), # Vol ∩ Vol
+			# Keyword arguments
+			:remove_tool => true, # Remove the "chip_area_extrusion" group
+		),
+		(   # Define the vacuum domain as the remainder of the simulation domain.
+			"vacuum",
+			SolidModels.difference_geom!,
+			("simulated_area_extrusion", "substrate", 3, 3),
+			:remove_object => true,
+		),
+		(
+			"ground_mask",
+			SolidModels.remove_group!,
+			("ground_mask", 2),
+		),
+	],
+)
+
+# We only want to retain physical groups that we will need for specifying boundary
+# conditions in the physical domain.
+retained_physical_groups=[
+	("vacuum", 3),
+	("substrate", 3),
+	("metal", 2),
+	("exterior_boundary", 2),
 ]
 
 sm = SolidModel("test"; overwrite = true)
-#SolidModels.gmsh.option.setNumber("General.Verbosity", 0)
-render!(sm, device; zmap = zmap);
-SolidModels.gmsh.fltk.run()
-SolidModels.gmsh.model.mesh.generate()
 
-"""
+SolidModels.gmsh.option.setNumber("General.Verbosity", 0)
+render!(sm, device; zmap = zmap, postrender_ops = postrender_ops);
+
+SolidModels.gmsh.fltk.run()
+SolidModels.gmsh.model.mesh.generate() # Generate default mesh (low quality)
+# save("model.stp", sm) # Use standard STEP format
+SolidModels.gmsh.finalize() # Finalize the Gmsh API when done using Gmsh
+
+
 # Adjust mesh_scale to increase the resolution of the mesh, < 1 will result in greater
 # resolution near edges of the geometry.
-meshing_parameters = SolidModels.MeshingParameters(
-	mesh_scale = 1.0,
-	α_default = 0.9,
-	mesh_order = 2,
-	options = Dict("General.Verbosity" => 1.0), # General Gmsh option input
-)
 
 save(joinpath(@__DIR__, "test02.msh2"), sm)
-"""

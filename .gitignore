@@ -1,2 +1,4 @@
 *.gds
 .DS_Store
+*.msh2
+*.gds
