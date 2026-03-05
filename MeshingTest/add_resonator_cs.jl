@@ -73,15 +73,37 @@ launch!(TL_path; launch_param...)
 straight!(TL_path, readout_length, cpw_style)
 launch!(TL_path; launch_param...)
 
-csport = CoordinateSystem(uniquename("port"), nm)
-render!(
-	csport,
-	only_simulated(centered(Rectangle(cpw_style.trace, cpw_style.trace))),
-	LayerVocabulary.PORT,
-)
-# Attach with port center `cpw_width` from the end (instead of `cpw_width/2`) to avoid corner effects
-attach!(TL_path, sref(csport), cpw_style.trace, i = 4) # @ start
-attach!(TL_path, sref(csport), readout_length / 2 - cpw_style.trace, i = 4) # @ end
+if false
+	csport = CoordinateSystem(uniquename("port"), nm)
+	render!(
+		csport,
+		only_simulated(centered(Rectangle(cpw_style.trace, cpw_style.trace))),
+		LayerVocabulary.PORT,
+	)
+	# Attach with port center `cpw_width` from the end (instead of `cpw_width/2`) to avoid corner effects
+	attach!(TL_path, sref(csport), cpw_style.trace, i = 4) # @ start
+	attach!(TL_path, sref(csport), readout_length / 2 - cpw_style.trace, i = 4) # @ end
+else
+	# Helper: port meta with index
+	# Make two tiny port CS templates, identical geometry, different metadata index
+	csport1 = CoordinateSystem(uniquename("port1"), nm)
+	render!(
+		csport1,
+		only_simulated(centered(Rectangle(cpw_style.trace, cpw_style.trace))),
+		LayerVocabulary.PORT_1,
+	)
+
+	csport2 = CoordinateSystem(uniquename("port2"), nm)
+	render!(
+		csport2,
+		only_simulated(centered(Rectangle(cpw_style.trace, cpw_style.trace))),
+		LayerVocabulary.PORT_2,
+	)
+
+	# Attach onto TL_path segment i=4 (this i is still your path-segment selector)
+	attach!(TL_path, sref(csport1), cpw_style.trace, i = 4) # @ start
+	attach!(TL_path, sref(csport2), readout_length / 2 - cpw_style.trace, i = 4) # @ end
+end
 
 place!(device, TL_path, LayerVocabulary.METAL_NEGATIVE)
 ########################################
@@ -201,12 +223,15 @@ retained_physical_groups=[
 	("substrate", 3),
 	("metal", 2),
 	("exterior_boundary", 2),
+	("port_1", 2),
+	("port_2", 2),
 ]
 
 sm = SolidModel("test"; overwrite = true)
 
 SolidModels.gmsh.option.setNumber("General.Verbosity", 0)
-render!(sm, device; zmap = zmap, postrender_ops = postrender_ops, retained_physical_groups = retained_physical_groups);
+
+render!(sm, device; zmap = zmap, postrender_ops = postrender_ops, retained_physical_groups = retained_physical_groups, simulation = true);
 SolidModels.gmsh.model.mesh.generate(3) # Generate default mesh
 # save("model.stp", sm) # Use standard STEP format
 SolidModels.gmsh.fltk.run()
