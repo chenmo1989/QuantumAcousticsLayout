@@ -16,8 +16,8 @@ using CQEDPDK.ChipTemplates_CQED
 ## Define parameters
 chip_width=5mm
 chip_height=5mm
-deadzone_width=0.3mm
-deadzone_height=0mm
+deadzone_width=0.1mm
+deadzone_height=0.1mm
 cutout_width=300μm
 cutout_height=100μm
 
@@ -34,12 +34,13 @@ ChipTemplates_CQED.build_device!(device;
 	cutout_width = cutout_width,
 	cutout_height = cutout_height,
 )
-"""
 
+"""
 ## to Simplify things for building the mesh and for palace model
 chip = centered(Rectangle(chip_width, chip_height))
 
-place!(device, chip, LayerVocabulary.CHIP_AREA)
+place!(device, (chip), LayerVocabulary.CHIP_AREA)
+#place!(device, chip, LayerVocabulary.NORENDER_META)
 
 ########################################
 ########Add Transmission Line###########
@@ -88,7 +89,7 @@ render!(
 )
 # Attach with port center `cpw_width` from the end (instead of `cpw_width/2`) to avoid corner effects
 attach!(TL_path, sref(csport), cpw_style.trace, i = 4) # @ start
-attach!(TL_path, sref(csport), readout_length / 2 - cpw_style.trace, i = 5) # @ end
+attach!(TL_path, sref(csport), readout_length / 2 - cpw_style.trace, i = 4) # @ end
 
 place!(device, TL_path, LayerVocabulary.METAL_NEGATIVE)
 ########################################
@@ -144,47 +145,31 @@ terminate!(RO_path) # for simulation purpose, since we do not have the claw/qubi
 
 place!(device, RO_path, LayerVocabulary.METAL_NEGATIVE)
 
-########################################
-########Turn to Solid Model#############
-########################################
-
-"""
-Map SemanticMeta(:some_layer) -> GDSMeta(layer, datatype) using CQEDPDK.LAYER_RECORD.
-
-- Passes through GDSMeta unchanged.
-- Returns NORENDER_META unchanged (so DeviceLayout can skip it).
-- Errors on unknown SemanticMeta keys (good for catching typos).
-"""
-function map_meta_from_layer_record(m)
-	# Let already-concrete GDS metadata pass through.
-	m isa GDSMeta && return m
-
-	# If you rely on NORENDER_META anywhere:
-	m === DeviceLayout.NORENDER_META && return m
-
-	# Only handle SemanticMeta
-	if m isa SemanticMeta
-		k = layer(m)  # should be :metal_negative, :junction, etc.
-		haskey(LAYER_RECORD, k) || error("map_meta: SemanticMeta($k) not in LAYER_RECORD")
-		rec = LAYER_RECORD[k]
-		return GDSMeta(layer(rec), datatype(rec))
-	end
-
-	# If you also have other Meta types, either pass-through or decide a policy:
-	error("map_meta: don't know how to map metadata of type $(typeof(m)): $m")
-end
+############Bounding the simulation area############
+place!(device, centered(Rectangle(readout_length / 2, 3mm), on_pt = Point(-0.91mm, 0.85mm)), LayerVocabulary.SIMULATED_AREA)
 
 c = Cell("test02", nm)
-
-#render!(c, device; map_meta = map_meta_from_layer_record)
 render!(c, device, L1_TARGET, strict = :no, simulation = true)
 flatten!(c)
 save(joinpath(@__DIR__, "test02.gds"), c)
 
-# Need to pass generated physical group names so they can be retained
-tech = CQEDPDK.singlechip_solidmodel_target()
-sm = SolidModel("test", overwrite = true)
+########################################
+########Turn to Solid Model#############
+########################################
+zmap = (m) -> layer(m) == :simulated_area ? -1000μm : 0μm
+postrender_ops = [
+	("substrate_extrusion", SolidModels.extrude_z!, ("chip_area", -500μm))
+	("simulated_area_extrusion", SolidModels.extrude_z!, ("simulated_area", 2000μm))
+	("metal", SolidModels.difference_geom!, ("chip_area", "metal_negative"))
+]
 
+sm = SolidModel("test"; overwrite = true)
+#SolidModels.gmsh.option.setNumber("General.Verbosity", 0)
+render!(sm, device; zmap = zmap);
+SolidModels.gmsh.fltk.run()
+SolidModels.gmsh.model.mesh.generate()
+
+"""
 # Adjust mesh_scale to increase the resolution of the mesh, < 1 will result in greater
 # resolution near edges of the geometry.
 meshing_parameters = SolidModels.MeshingParameters(
@@ -194,20 +179,5 @@ meshing_parameters = SolidModels.MeshingParameters(
 	options = Dict("General.Verbosity" => 1.0), # General Gmsh option input
 )
 
-#place!.(device, offset(bounds(device), 200μm), :substrate)
-#place!(device, bounds(device), :simulated_area)
-place!(device, centered(Rectangle(5mm, 3.5mm), on_pt = Point(0mm, 0.75mm)), :simulated_area)
-zmap = (m) -> layer(m) == :simulated_area ? -1000μm : 0μm
-postrender_ops = [
-	("substrate_extrusion", SolidModels.extrude_z!, ("simulated_area", -500μm))
-	("simulated_area_extrusion", SolidModels.extrude_z!, ("simulated_area", 2000μm))
-	("metal", SolidModels.difference_geom!, ("simulated_area", "metal_negative"))
-]
-
-SolidModels.gmsh.option.setNumber("General.Verbosity", 0)
-render!(sm, device; zmap = zmap, postrender_ops = postrender_ops);
-#SolidModels.gmsh.model.mesh.generate(3)
-#SolidModels.gmsh.fltk.run()
-
 save(joinpath(@__DIR__, "test02.msh2"), sm)
-
+"""
