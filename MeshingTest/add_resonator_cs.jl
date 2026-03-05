@@ -145,7 +145,9 @@ place!(device, RO_path, LayerVocabulary.METAL_NEGATIVE)
 
 ############Bounding the simulation area############
 #place!(device, centered(Rectangle(readout_length / 2, 3mm), on_pt = Point(-0.91mm, 0.85mm)), LayerVocabulary.SIMULATED_AREA)
-place!(device, bounds(device), :simulated_area)
+place!(device, chip, LayerVocabulary.SIMULATED_AREA)
+place!(device, chip, LayerVocabulary.WRITEABLE_AREA)
+#place!(device, bounds(device), :simulated_area)
 
 c = Cell("test02", nm)
 
@@ -161,12 +163,10 @@ save(joinpath(@__DIR__, "test02.gds"), c)
 #zmap = (m) -> layer(m) == :simulated_area ? -1000μm : 0μm
 
 # Define z heights and thickness (where nonzero)
-if false
+if true
 	layer_z = Dict(:chip_area => -525μm, :simulated_area => -1mm)
 	layer_thickness = Dict(:chip_area => 525μm, :simulated_area => 2mm)
 	zmap = (m) -> get(layer_z, layer(m), 0μm)
-
-	### try simple 2D###
 
 	# Define postrendering operations:
 	# Extrusions, geometric Boolean operations, and other transformations
@@ -185,7 +185,7 @@ if false
 			(
 				"metal",
 				SolidModels.intersect_geom!,
-				("metal", "simulated_area_extrusion", 2, 2),
+				("metal", "simulated_area_extrusion", 2, 3),
 			),
 			(   # Intersect chip volume with simulation volume
 				"substrate", # New physical group name
@@ -217,30 +217,49 @@ if false
 	sm = SolidModel("test"; overwrite = true)
 
 	SolidModels.gmsh.option.setNumber("General.Verbosity", 0)
-	render!(sm, device; postrender_ops = postrender_ops, retained_physical_groups = retained_physical_groups);
-
-	SolidModels.gmsh.fltk.run()
-	SolidModels.gmsh.model.mesh.generate() # Generate default mesh (low quality)
+	render!(sm, device; zmap = zmap, postrender_ops = postrender_ops, retained_physical_groups = retained_physical_groups);
+	SolidModels.gmsh.model.mesh.generate(3) # Generate default mesh (low quality)
 	# save("model.stp", sm) # Use standard STEP format
-	SolidModels.gmsh.finalize() # Finalize the Gmsh API when done using Gmsh
+	SolidModels.gmsh.fltk.run()
+	#SolidModels.gmsh.finalize() # Finalize the Gmsh API when done using Gmsh
 
 else
 	zmap = (m) -> layer(m) == :simulated_area ? -1000μm : 0μm
 	postrender_ops = [
-		("simulated_area_extrusion", SolidModels.extrude_z!, ("simulated_area", 2000μm))
-		("substrate_extrusion", SolidModels.extrude_z!, ("chip_area", -500μm))
-		("substrate", # New physical group name
+		("simulated_area_extrusion", SolidModels.extrude_z!, ("simulated_area", 2000μm)),
+		("substrate_extrusion", SolidModels.extrude_z!, ("chip_area", -525μm)),
+		(
+			"substrate", # New physical group name
 			SolidModels.intersect_geom!, # Operation
 			# Arguments: Object, tool, object dimension, tool dimension
 			("simulated_area_extrusion", "substrate_extrusion", 3, 3), # Vol ∩ Vol
 			# Keyword arguments
-			:remove_tool => true, # Remove the "chip_area_extrusion" group
-		)
-		("metal", SolidModels.difference_geom!, ("chip_area", "metal_negative"))
+			:remove_tool => true, # Remove the "substrate_extrusion" group
+		),
+		(
+			"metal", SolidModels.difference_geom!, ("chip_area", "metal_negative"),
+			:remove_object => true,
+			:remove_tool => true,
+		),
+		("metal", SolidModels.intersect_geom!, ("metal", "simulated_area_extrusion", 2, 3)),
+		(
+			"vacuum",
+			SolidModels.difference_geom!,
+			("simulated_area_extrusion", "substrate", 3, 3),
+			:remove_object => true,
+		),
 	]
+
+	retained_physical_groups=[
+		("vacuum", 3),
+		("substrate", 3),
+		("metal", 2),
+		("exterior_boundary", 2),
+	]
+
 	sm = SolidModel("model", overwrite = true)
 	SolidModels.gmsh.option.setNumber("General.Verbosity", 0)
-	render!(sm, device; zmap = zmap, postrender_ops = postrender_ops);
+	render!(sm, device; zmap = zmap, postrender_ops = postrender_ops, retained_physical_groups = retained_physical_groups);
 	#
 	SolidModels.gmsh.model.mesh.generate(3)
 
